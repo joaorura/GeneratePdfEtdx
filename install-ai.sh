@@ -1,0 +1,31 @@
+#!/bin/bash
+
+echo "========================================"
+echo "   Instalando Dependencias de IA"
+echo "========================================"
+echo ""
+echo "Este script instala as dependencias necessarias"
+echo "para usar funcionalidades de IA (upscale inteligente)."
+echo ""
+echo "NOTA: Estas dependencias sao opcionais e apenas"
+echo "necessarias para execucao direta em Python."
+echo ""
+read -p "Pressione Enter para continuar..."
+
+echo ""
+echo "Instalando dependencias de IA..."
+pip install -r requirements-ai.txt
+
+echo ""
+echo "========================================"
+echo "   Instalacao Concluida!"
+echo "========================================"
+echo ""
+echo "Agora voce pode usar funcionalidades de IA"
+echo "executando diretamente com Python:"
+echo "  python gui.py"
+echo ""
+echo "Para usar upscale inteligente, marque a"
+echo "opcao 'Usar upscale inteligente' na interface."
+echo ""
+read -p "Pressione Enter para sair..." 

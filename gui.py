@@ -1,17 +1,60 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-from pdf_generator.core import PDFGenerator, extract_etdx
+from pdf_generator.core import PDFGenerator, extract_etdx, REALESRGAN_AVAILABLE, clear_upscale_cache
 import shutil
 import os
+import sys
+import time
+import io
+
+class LogRedirector:
+    """Classe para redirecionar stdout para o arquivo de log"""
+    def __init__(self, log_file="app.log"):
+        self.log_file = log_file
+        self.original_stdout = sys.stdout
+        self.buffer = io.StringIO()
+        
+    def write(self, text):
+        # Escrever no buffer original (console)
+        self.original_stdout.write(text)
+        # Escrever no arquivo de log
+        try:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{timestamp}] {text}")
+        except Exception as e:
+            self.original_stdout.write(f"Erro ao escrever no log: {e}\n")
+    
+    def flush(self):
+        self.original_stdout.flush()
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.flush()
+        except:
+            pass
+
+def clear_log_file(log_file="app.log"):
+    """Limpa o arquivo de log ao iniciar o aplicativo"""
+    try:
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write(f"=== LOG INICIADO EM {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    except Exception as e:
+        print(f"Erro ao limpar arquivo de log: {e}")
 
 class PDFApp:
     def __init__(self, root):
         self.root = root
         self.root.title('Gerador de PDF (.etdx)')
-        self.root.geometry('520x350')
-        self.root.minsize(400, 260)
+        self.root.geometry('520x380')
+        self.root.minsize(400, 300)
         self.root.resizable(True, True)
+        
+        # Inicializar sistema de log
+        clear_log_file()
+        self.log_redirector = LogRedirector()
+        sys.stdout = self.log_redirector
+        
         self.etdx_path = tk.StringVar()
         self.output_path = tk.StringVar(value='documento_gerado.pdf')
         self.status = tk.StringVar(value='Aguardando seleção do arquivo...')
@@ -70,10 +113,33 @@ class PDFApp:
         self.quality_entry.pack(side='left', padx=5)
         self.toggle_jpeg_quality()
 
-        # Checkbox para upscale inteligente
+        # Checkbox para upscale inteligente com status
         upscale_frame = ttk.Frame(frm)
         upscale_frame.pack(fill='x', pady=5)
-        ttk.Checkbutton(upscale_frame, text='Upscale inteligente (SwinIR, mais qualidade para imagens pequenas)', variable=self.upscale).pack(anchor='w')
+        
+        # Status do RealESRGAN
+        if getattr(sys, 'frozen', False):
+            status_text = "🚫 Upscale inteligente desabilitado (executável compilado)"
+            status_color = "red"
+            self.upscale.set(False)  # Desabilitar por padrão em executáveis compilados
+        elif REALESRGAN_AVAILABLE:
+            status_text = "✅ Upscale inteligente (RealESRGAN) disponível"
+            status_color = "green"
+        else:
+            status_text = "⚠️ Upscale inteligente não disponível (usando redimensionamento simples)"
+            status_color = "orange"
+            self.upscale.set(False)  # Desabilitar por padrão se não disponível
+        
+        ttk.Label(upscale_frame, text=status_text, foreground=status_color).pack(anchor='w')
+        
+        # Checkbox
+        self.upscale_checkbox = ttk.Checkbutton(
+            upscale_frame, 
+            text='Usar upscale inteligente para melhorar imagens pequenas', 
+            variable=self.upscale,
+            state='disabled' if getattr(sys, 'frozen', False) else ('normal' if REALESRGAN_AVAILABLE else 'disabled')
+        )
+        self.upscale_checkbox.pack(anchor='w')
 
         # Barra de progresso
         ttk.Progressbar(frm, variable=self.progress, maximum=100).pack(fill='x', pady=10)
@@ -87,6 +153,7 @@ class PDFApp:
             self.jpeg_frame.pack_forget()
 
     def select_file(self):
+        clear_upscale_cache()  # Limpa ambos os caches ao selecionar novo arquivo
         path = filedialog.askopenfilename(filetypes=[('Arquivos EDTX', '*.etdx')])
         if path:
             self.etdx_path.set(path)
@@ -95,6 +162,25 @@ class PDFApp:
         if not self.etdx_path.get().lower().endswith('.etdx'):
             messagebox.showerror('Erro', 'Selecione um arquivo .etdx válido!')
             return
+        
+        # Verificar se upscale foi solicitado mas não está disponível
+        if getattr(sys, 'frozen', False) and self.upscale.get():
+            messagebox.showinfo(
+                'Upscale desabilitado', 
+                'O upscale inteligente está desabilitado em executáveis compilados.\n\n'
+                'O processamento será feito com redimensionamento simples.'
+            )
+            self.upscale.set(False)
+        elif self.upscale.get() and not REALESRGAN_AVAILABLE:
+            result = messagebox.askyesno(
+                'Upscale não disponível', 
+                'O upscale inteligente (RealESRGAN) não está disponível.\n\n'
+                'Deseja continuar com processamento normal (sem upscale)?'
+            )
+            if not result:
+                return
+            self.upscale.set(False)
+        
         self.status.set('Processando...')
         self.progress.set(0)
         threading.Thread(target=self.process_pdf, daemon=True).start()
@@ -106,6 +192,13 @@ class PDFApp:
             def progress_callback(atual, total):
                 self.progress.set(100 * atual / total)
                 self.status.set(f'Processando página {atual} de {total}...')
+            
+            # Mostrar informações sobre o processamento
+            if self.upscale.get():
+                self.status.set('Iniciando processamento com upscale inteligente...')
+            else:
+                self.status.set('Iniciando processamento normal...')
+            
             generator.create_pdf(
                 self.output_path.get(),
                 dpi=self.dpi.get(),

@@ -1,43 +1,25 @@
 @echo off
-echo Compilando aplicacao...
-
-REM Limpar builds anteriores
-if exist "dist" rmdir /s /q "dist"
+echo ========================================
+echo    Gerador de PDF - Build Otimizado
+echo ========================================
+echo.
+echo Removendo builds anteriores...
 if exist "build" rmdir /s /q "build"
+if exist "dist" rmdir /s /q "dist"
 if exist "*.spec" del "*.spec"
 
-REM Compilar com PyInstaller
-pyinstaller --onefile ^
-    --windowed ^
-    --name "GeradorPDF" ^
-    --icon "icons/pdf_gear.ico" ^
-    --add-data "icons;icons" ^
-    --add-data "weights;weights" ^
-    --hidden-import "multiprocessing" ^
-    --hidden-import "multiprocessing.pool" ^
-    --hidden-import "multiprocessing.managers" ^
-    --hidden-import "multiprocessing.synchronize" ^
-    --hidden-import "PIL" ^
-    --hidden-import "PIL.Image" ^
-    --hidden-import "reportlab" ^
-    --hidden-import "reportlab.pdfgen" ^
-    --hidden-import "reportlab.lib.colors" ^
-    --hidden-import "zipfile" ^
-    --hidden-import "tempfile" ^
-    --hidden-import "io" ^
-    --hidden-import "json" ^
-    --hidden-import "pathlib" ^
-    --hidden-import "tkinter" ^
-    --hidden-import "tkinter.filedialog" ^
-    --hidden-import "tkinter.messagebox" ^
-    --hidden-import "tkinter.ttk" ^
-    --hidden-import "threading" ^
-    --hidden-import "shutil" ^
-    --hidden-import "os" ^
-    --hidden-import "sys" ^
-    --collect-all "pdf_generator" ^
-    --runtime-hook "runtime_hook.py" ^
-    gui.py
+echo.
+echo Instalando dependencias...
+pip install -r requirements.txt
 
-echo Compilacao concluida!
+echo.
+echo Criando executavel otimizado (sem IA)...
+pyinstaller --clean --onefile --windowed --icon=icons/pdf_gear.ico --name=GeradorPDF gui.py
+
+echo.
+echo Build concluido!
+echo Executavel criado em: dist/GeradorPDF.exe
+echo.
+echo Nota: Este build nao inclui funcionalidades de IA para reduzir o tamanho.
+echo Para usar IA, execute diretamente com Python: python gui.py
 pause 

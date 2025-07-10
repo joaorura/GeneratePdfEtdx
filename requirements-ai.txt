@@ -1,0 +1,20 @@
+# ========================================
+# DEPENDENCIAS DE IA (para execução direta)
+# ========================================
+# Instale este arquivo apenas se quiser usar funcionalidades de IA
+# Execute: pip install -r requirements-ai.txt
+
+numpy<2
+torch==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+torchvision==0.17.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+torchaudio==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+huggingface_hub==0.19.4
+py-real-esrgan==2.0.0
+
+# ========================================
+# ALTERNATIVA PARA CPU (mais lento)
+# ========================================
+# Se não tiver GPU NVIDIA, use estas versões:
+# torch==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
+# torchvision==0.17.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
+# torchaudio==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html 

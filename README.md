@@ -6,22 +6,34 @@ Aplicação para gerar PDFs a partir de arquivos .etdx (arquivos ZIP disfarçado
 
 - ✅ Geração de PDF a partir de arquivos .etdx
 - ✅ Suporte a múltiplos tamanhos de papel (A4, A3, A5, etc.)
-- ✅ Upscale inteligente de imagens usando RealESRGAN
+- ✅ Upscale inteligente de imagens usando RealESRGAN (apenas execução direta)
 - ✅ Interface gráfica amigável
 - ✅ Processamento paralelo de imagens (quando disponível)
 - ✅ Configurações de qualidade (DPI, formato de imagem, qualidade JPEG)
+- ✅ Build otimizado sem dependências de IA (executáveis mais leves)
+
+## Modos de Execução
+
+### 🐍 Execução Direta (Python)
+- **Funcionalidades completas**: Inclui upscale inteligente com RealESRGAN
+- **Tamanho**: Maior devido às dependências de IA
+- **Performance**: Melhor para imagens pequenas com upscale
+
+### 📦 Executável Compilado
+- **Funcionalidades básicas**: Apenas redimensionamento simples
+- **Tamanho**: Muito menor (sem dependências de IA)
+- **Performance**: Rápido para imagens normais
 
 ## Instalação
 
-1. Clone o repositório:
-```bash
-git clone <url-do-repositorio>
-cd teste
-```
-
-2. Instale as dependências:
+### Dependências Básicas (obrigatórias)
 ```bash
 pip install -r requirements.txt
+```
+
+### Dependências de IA (opcional - apenas para execução direta)
+```bash
+pip install -r requirements-ai.txt
 ```
 
 ## Uso
@@ -34,67 +46,63 @@ python gui.py
 ### Linha de Comando
 ```bash
 # Gerar PDF a partir de arquivo .etdx
-python cli.py arquivo.etdx --output saida.pdf
+python main.py arquivo.etdx --output saida.pdf
 
 # Com configurações personalizadas
-python cli.py arquivo.etdx --output saida.pdf --dpi 600 --img-format png --jpeg-quality 95
+python main.py arquivo.etdx --output saida.pdf --dpi 600 --format png --quality 95
 
-# Desabilitar upscale inteligente
-python cli.py arquivo.etdx --no-upscale
+# Usar upscale inteligente (apenas execução direta)
+python main.py arquivo.etdx --upscale
 ```
 
 ## Compilação
 
-Para criar um executável standalone:
+Para criar um executável otimizado (sem IA):
 
 ```bash
 # Windows
 build.bat
 
 # Linux/Mac
-pyinstaller --onefile --windowed --name "GeradorPDF" gui.py
+pyinstaller --clean --onefile --windowed --icon=icons/pdf_gear.ico --name=GeradorPDF gui.py
 ```
+
+**Nota**: O executável compilado não inclui funcionalidades de IA para reduzir o tamanho. Para usar IA, execute diretamente com Python.
+
+## Diferenças entre Modos
+
+| Funcionalidade | Execução Direta | Executável Compilado |
+|----------------|-----------------|---------------------|
+| Upscale Inteligente | ✅ RealESRGAN | ❌ Redimensionamento simples |
+| Cache de Imagens | ✅ Completo | ❌ Desabilitado |
+| Multiprocessing | ✅ Ativo | ⚠️ Limitado |
+| Tamanho do Build | Grande (~500MB+) | Pequeno (~50MB) |
+| Dependências | Todas | Apenas básicas |
 
 ## Solução de Problemas
 
+### Upscale Inteligente Não Disponível
+
+**Executável Compilado:**
+- O upscale inteligente é intencionalmente desabilitado em executáveis compilados
+- Use redimensionamento simples ou execute diretamente com Python
+
+**Execução Direta:**
+- Verifique se instalou as dependências de IA: `pip install -r requirements-ai.txt`
+- Verifique se o arquivo `weights/RealESRGAN_x4.pth` existe
+- O aplicativo automaticamente usa upscale simples como fallback
+
 ### Erro de Multiprocessing
 
-Se você encontrar erros relacionados ao multiprocessing ao executar o aplicativo compilado:
+Se você encontrar erros relacionados ao multiprocessing:
 
-```
-AttributeError: Can't get attribute '_preprocess_image_worker' on <module 'pdf_generator.core'>
-```
+**Executável Compilado:**
+- O multiprocessing é automaticamente desabilitado para evitar problemas
+- O processamento será sequencial (mais lento, mas estável)
 
-**Solução:** O aplicativo foi configurado para desabilitar automaticamente o multiprocessing em executáveis compilados. Isso pode tornar o processamento um pouco mais lento, mas evita os erros de compatibilidade.
-
-### Para Habilitar Multiprocessing em Executáveis
-
-Se você quiser tentar habilitar o multiprocessing em executáveis compilados:
-
-1. Edite o arquivo `pdf_generator/core.py`
-2. Mude a linha:
-   ```python
-   MULTIPROCESSING_AVAILABLE = not getattr(sys, 'frozen', False)
-   ```
-   Para:
-   ```python
-   MULTIPROCESSING_AVAILABLE = True
-   ```
-
-3. Recompile o aplicativo
-
-**Nota:** Isso pode causar erros em alguns sistemas. Se ocorrerem problemas, volte para a configuração padrão.
-
-### Problemas com RealESRGAN
-
-Se o upscale inteligente não funcionar:
-
-1. Verifique se o arquivo `weights/RealESRGAN_x4.pth` existe
-2. O aplicativo automaticamente usa upscale simples como fallback
-3. Para instalar RealESRGAN manualmente:
-   ```bash
-   pip install py-real-esrgan
-   ```
+**Execução Direta:**
+- O multiprocessing é habilitado por padrão
+- Se houver problemas, o aplicativo automaticamente faz fallback para processamento sequencial
 
 ## Estrutura do Projeto
 
@@ -106,11 +114,12 @@ teste/
 ├── icons/               # Ícones da aplicação
 ├── weights/             # Pesos do modelo RealESRGAN
 ├── gui.py              # Interface gráfica
-├── cli.py              # Interface de linha de comando
-├── main.py             # Versão simplificada (legado)
+├── main.py             # Interface de linha de comando
 ├── build.bat           # Script de compilação para Windows
 ├── runtime_hook.py     # Hook para PyInstaller
-└── requirements.txt    # Dependências
+├── requirements.txt    # Dependências básicas
+├── requirements-ai.txt # Dependências de IA (opcional)
+└── GeradorPDF.spec    # Especificação do PyInstaller
 ```
 
 ## Configurações
@@ -127,15 +136,21 @@ teste/
 - **80-100**: Quanto maior, melhor a qualidade e maior o arquivo
 
 ### Upscale Inteligente
-- **Ativado**: Usa RealESRGAN para melhorar imagens pequenas
-- **Desativado**: Usa redimensionamento simples
+- **Execução Direta**: Usa RealESRGAN para melhorar imagens pequenas
+- **Executável Compilado**: Usa redimensionamento simples
 
 ## Dependências
 
+### Básicas (obrigatórias)
 - `reportlab`: Geração de PDF
 - `Pillow`: Processamento de imagens
-- `py-real-esrgan`: Upscale inteligente (opcional)
-- `tkinter`: Interface gráfica (incluído no Python)
+- `pyinstaller`: Compilação (apenas para build)
+
+### IA (opcional)
+- `torch`: Framework de machine learning
+- `py-real-esrgan`: Upscale inteligente
+- `numpy`: Computação numérica
+- `huggingface_hub`: Modelos pré-treinados
 
 ## Licença
 
