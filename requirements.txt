@@ -1,0 +1,14 @@
+reportlab==4.0.4
+Pillow==10.0.1
+pyinstaller==6.6.0
+cairosvg==2.7.1
+numpy<2
+# Instale o PyTorch conforme seu sistema:
+# Para CPU (universal, mais lento):
+# torch==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
+# Para GPU (NVIDIA, mais rápido):
+torch==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+torchvision==0.17.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+torchaudio==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+huggingface_hub==0.19.4
+# py-real-esrgan==2.0.0  # Comentado temporariamente devido a problemas de compatibilidade
