@@ -1,20 +1,10 @@
 # ========================================
-# DEPENDENCIAS DE IA (para execução direta)
+# DEPENDÊNCIAS DE IA (opcionais)
 # ========================================
-# Instale este arquivo apenas se quiser usar funcionalidades de IA
-# Execute: pip install -r requirements-ai.txt
+# Instale manualmente os pacotes PyTorch com CUDA 11.7 para Python 3.10:
+# pip install torch==1.13.1+cu117 torchvision==0.14.1+cu117 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu117
+
 
 numpy<2
-torch==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-torchvision==0.17.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-torchaudio==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-huggingface_hub==0.19.4
-py-real-esrgan==2.0.0
-
-# ========================================
-# ALTERNATIVA PARA CPU (mais lento)
-# ========================================
-# Se não tiver GPU NVIDIA, use estas versões:
-# torch==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
-# torchvision==0.17.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
-# torchaudio==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html 
+huggingface-hub==0.16.4
+py-real-esrgan==2.0.0 

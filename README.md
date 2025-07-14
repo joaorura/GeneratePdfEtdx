@@ -1,9 +1,10 @@
-# Gerador de PDF (.etdx)
+# Gerador de PDF e ETDX
 
-Aplicação para gerar PDFs a partir de arquivos .etdx (arquivos ZIP disfarçados) com suporte a upscale inteligente de imagens.
+Aplicação para gerar PDFs a partir de arquivos .etdx e converter PDFs em arquivos .etdx editáveis, com suporte a upscale inteligente de imagens.
 
 ## Funcionalidades
 
+### 📄 Gerador de PDF (.etdx → PDF)
 - ✅ Geração de PDF a partir de arquivos .etdx
 - ✅ Suporte a múltiplos tamanhos de papel (A4, A3, A5, etc.)
 - ✅ Upscale inteligente de imagens usando RealESRGAN (apenas execução direta)
@@ -11,6 +12,14 @@ Aplicação para gerar PDFs a partir de arquivos .etdx (arquivos ZIP disfarçado
 - ✅ Processamento paralelo de imagens (quando disponível)
 - ✅ Configurações de qualidade (DPI, formato de imagem, qualidade JPEG)
 - ✅ Build otimizado sem dependências de IA (executáveis mais leves)
+
+### 🔄 Gerador de ETDX (.pdf → .etdx)
+- ✅ Conversão de PDFs em arquivos .etdx editáveis
+- ✅ Detecção automática de tamanho de papel
+- ✅ Upscale inteligente para melhorar qualidade
+- ✅ Interface gráfica dedicada
+- ✅ Processamento paralelo otimizado
+- ✅ Cache inteligente para melhor performance
 
 ## Modos de Execução
 
@@ -38,21 +47,42 @@ pip install -r requirements-ai.txt
 
 ## Uso
 
-### Interface Gráfica
+### 📄 Gerador de PDF (.etdx → PDF)
+
+#### Interface Gráfica
 ```bash
 python gui.py
 ```
 
-### Linha de Comando
+#### Linha de Comando
 ```bash
 # Gerar PDF a partir de arquivo .etdx
-python main.py arquivo.etdx --output saida.pdf
+python cli.py arquivo.etdx --output saida.pdf
 
 # Com configurações personalizadas
-python main.py arquivo.etdx --output saida.pdf --dpi 600 --format png --quality 95
+python cli.py arquivo.etdx --output saida.pdf --dpi 600 --format png --quality 95
 
 # Usar upscale inteligente (apenas execução direta)
-python main.py arquivo.etdx --upscale
+python cli.py arquivo.etdx --upscale
+```
+
+### 🔄 Gerador de ETDX (.pdf → .etdx)
+
+#### Interface Gráfica
+```bash
+python etdx_gui.py
+```
+
+#### Linha de Comando
+```bash
+# Converter PDF para .etdx
+python etdx_cli.py documento.pdf --output documento.etdx
+
+# Com configurações personalizadas
+python etdx_cli.py documento.pdf --output documento.etdx --dpi 600 --format png --upscale
+
+# Ajuda
+python etdx_cli.py --help
 ```
 
 ## Compilação
@@ -107,19 +137,24 @@ Se você encontrar erros relacionados ao multiprocessing:
 ## Estrutura do Projeto
 
 ```
-teste/
+GeneratePdfEtdx/
 ├── pdf_generator/
 │   ├── __init__.py
-│   └── core.py          # Lógica principal de geração de PDF
-├── icons/               # Ícones da aplicação
-├── weights/             # Pesos do modelo RealESRGAN
-├── gui.py              # Interface gráfica
-├── main.py             # Interface de linha de comando
-├── build.bat           # Script de compilação para Windows
-├── runtime_hook.py     # Hook para PyInstaller
-├── requirements.txt    # Dependências básicas
-├── requirements-ai.txt # Dependências de IA (opcional)
-└── GeradorPDF.spec    # Especificação do PyInstaller
+│   ├── core.py              # Lógica principal de geração de PDF
+│   └── etdx_generator.py    # Lógica de geração de ETDX
+├── icons/                   # Ícones da aplicação
+├── gui.py                   # Interface gráfica (PDF)
+├── cli.py                   # Interface CLI (PDF)
+├── etdx_gui.py             # Interface gráfica (ETDX)
+├── etdx_cli.py             # Interface CLI (ETDX)
+├── executar_gui.bat        # Script para executar GUI PDF
+├── executar_etdx_gui.bat   # Script para executar GUI ETDX
+├── build.bat               # Script de compilação para Windows
+├── runtime_hook.py         # Hook para PyInstaller
+├── requirements.txt        # Dependências básicas
+├── requirements-ai.txt     # Dependências de IA (opcional)
+├── README.md              # Documentação principal
+└── README_ETDX.md         # Documentação específica do ETDX
 ```
 
 ## Configurações
@@ -151,6 +186,11 @@ teste/
 - `py-real-esrgan`: Upscale inteligente
 - `numpy`: Computação numérica
 - `huggingface_hub`: Modelos pré-treinados
+
+## Documentação Adicional
+
+Para informações detalhadas sobre o gerador de ETDX, consulte:
+- [README_ETDX.md](README_ETDX.md) - Documentação específica do módulo ETDX
 
 ## Licença
 

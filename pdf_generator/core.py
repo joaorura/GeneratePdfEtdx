@@ -4,6 +4,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import white
 from PIL import Image
 from PIL.Image import DecompressionBombError
+from .robust_realesrgan import create_robust_realesrgan
 # Desativa o limite de pixels do Pillow
 Image.MAX_IMAGE_PIXELS = None
 import zipfile
@@ -399,18 +400,19 @@ class PDFGenerator:
         return None
 
     def get_paper_size(self, paper_size_id, dpi=300):
-        # Tamanhos em mm (A4, A3, etc)
+        # Tamanhos permitidos (apenas os da imagem fornecida)
         mm_sizes = {
-            'A4': (210, 297),
-            'A3': (297, 420),
-            'A5': (148, 210),
-            'LB': (89, 127),
-            '2L': (127, 178),
-            'HG': (102, 152),
-            'KG': (102, 152),
-            'S2': (127, 127),
+            '3.5x5': (89, 127),           # 3,5 x 5 pol. (89 x 127 mm)
+            '5x7': (127, 178),            # 5 x 7 pol. (127 x 178 mm)
+            '4x6': (102, 152),            # 4 x 6 pol. (102 x 152 mm)
+            'A4': (210, 297),             # A4 (210 x 297 mm)
+            '8x10': (203, 254),           # 8 x 10 pol. (203 x 254 mm)
+            'Carta': (216, 279),          # Carta (216 x 279 mm)
+            'Oficio': (216, 356),         # Oficio (216 x 356 mm)
         }
-        size_mm = mm_sizes.get(paper_size_id, mm_sizes['A4'])
+        if paper_size_id not in mm_sizes:
+            raise ValueError(f"Tamanho de papel não permitido: {paper_size_id}. Tamanhos aceitos: {list(mm_sizes.keys())}")
+        size_mm = mm_sizes[paper_size_id]
         # 1 polegada = 25.4 mm
         width_pt = size_mm[0] / 25.4 * dpi
         height_pt = size_mm[1] / 25.4 * dpi
@@ -480,8 +482,8 @@ class PDFGenerator:
         new_height = int(img.height * scale)
         return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-    def upscale_realesrgan(self, img, scale=2, timeout=None, img_path=None, target_size=None):
-        """Tenta usar RealESRGAN com dois níveis de cache: modelo e resultado final"""
+    def upscale_realesrgan(self, img, scale=2, timeout=300, img_path=None, target_size=None):
+        """Upscale usando RealESRGAN robusto com fallback automático"""
         # Em executáveis compilados, sempre usar upscale simples
         if getattr(sys, 'frozen', False):
             print("Executável compilado detectado - usando upscale simples")
@@ -491,61 +493,146 @@ class PDFGenerator:
             print("RealESRGAN não disponível, usando upscale simples")
             return self.upscale_simple(img, scale)
 
-        if timeout is None:
-            timeout = scale * 60
+        # 1. Verificar cache final primeiro (imagem já no tamanho desejado)
+        final_cache_hash = None
+        if img_path and target_size:
+            final_cache_hash = get_final_cache_hash(img_path, scale, target_size)
+            if final_cache_hash:
+                img_cache = get_final_cache(final_cache_hash)
+                if img_cache is not None:
+                    print(f"Cache final hit para {img_path} (escala x{scale}, size={target_size})")
+                    return img_cache
 
-        # Hashes para os caches
+        # 2. Verificar cache do modelo
         model_cache_hash = get_model_cache_hash(img_path, scale) if img_path else None
-        final_cache_hash = get_final_cache_hash(img_path, scale, target_size) if (img_path and target_size) else None
-
-        # 1. Busca no cache final (imagem já no tamanho desejado)
-        if final_cache_hash:
-            img_cache = get_final_cache(final_cache_hash)
-            if img_cache is not None:
-                if img_path is not None:
-                    print(f"Cache final hit para imagem {img_path.name} (escala x{scale}, size={target_size})")
-                else:
-                    print(f"Cache final hit para imagem desconhecida (escala x{scale}, size={target_size})")
-                return img_cache
-
-        # 2. Busca no cache do modelo (imagem upscalada, sem redimensionar)
         upscale_img = None
         if model_cache_hash:
             upscale_img = get_model_cache(model_cache_hash)
+            if upscale_img is not None:
+                print(f"Cache do modelo hit para {img_path} (escala x{scale})")
+                if target_size:
+                    upscale_img = upscale_img.resize(target_size, Image.Resampling.LANCZOS)
+                    # Salva no cache final
+                    if final_cache_hash:
+                        set_final_cache(final_cache_hash, upscale_img)
+                return upscale_img
 
-        # 3. Se não achou no cache do modelo, executa o modelo
+        # 3. Usar RealESRGAN robusto com fallback automático
         if upscale_img is None:
             with realesrgan_lock:
                 try:
-                    cache_key = f"model_{scale}"
+                    cache_key = f"robust_model_{scale}"
                     model = None
                     if cache_key in _realesrgan_model_cache:
                         model = _realesrgan_model_cache[cache_key]
                     else:
-                        print(f"Carregando modelo RealESRGAN x{scale}...")
-                        from py_real_esrgan.model import RealESRGAN
-                        import torch
-                        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                        model = RealESRGAN(device, scale=scale)
-                        weights_path = f"weights/RealESRGAN_x{scale}.pth"
-                        if os.path.exists(weights_path):
-                            model.load_weights(weights_path, download=False)
-                        else:
-                            model.load_weights(weights_path, download=True)
-                            if not os.path.exists(weights_path):
-                                print(f"Arquivo de pesos não encontrado: {weights_path}")
-                                print("Usando upscale simples")
-                                return self.upscale_simple(img, scale)
+                        print(f"Carregando RealESRGAN robusto x{scale}...")
+                        
+                        # Usar RealESRGAN robusto
+                        try:
+                            from robust_realesrgan import create_robust_realesrgan
+                            preferred_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                            model = create_robust_realesrgan(preferred_device, scale=scale)
+                        except ImportError:
+                            # Fallback para RealESRGAN original
+                            from py_real_esrgan.model import RealESRGAN
+                            device = torch.device('cpu')  # Usar CPU por segurança
+                            model = RealESRGAN(device, scale=scale)
+                            weights_path = f"weights/RealESRGAN_x{scale}.pth"
+                            if os.path.exists(weights_path):
+                                model.load_weights(weights_path, download=False)
+                            else:
+                                model.load_weights(weights_path, download=True)
+                        
                         _realesrgan_model_cache[cache_key] = model
-                        print(f"Modelo RealESRGAN x{scale} carregado com sucesso")
+                        print(f"RealESRGAN robusto x{scale} carregado com sucesso")
+                    
                     upscale_result = None
                     upscale_error = None
                     def upscale_worker():
                         nonlocal upscale_result, upscale_error
                         try:
-                            upscale_result = model.predict(img)
+                            # Usar método predict do modelo robusto
+                            if hasattr(model, 'predict'):
+                                upscale_result = model.predict(img)
+                            else:
+                                # Fallback para método original
+                                upscale_result = model.predict(img)
                         except Exception as e:
                             upscale_error = str(e)
+                    
+                    thread = threading.Thread(target=upscale_worker)
+                    thread.daemon = True
+                    thread.start()
+                    thread.join(timeout=timeout)
+                    if thread.is_alive():
+                        print(f"Timeout ao processar imagem com RealESRGAN (>{timeout}s), usando upscale simples")
+                        return self.upscale_simple(img, scale)
+                    if upscale_error:
+                        print(f"Erro no RealESRGAN: {upscale_error}, usando upscale simples")
+                        return self.upscale_simple(img, scale)
+                    if upscale_result is None or not hasattr(upscale_result, 'width'):
+                        print(f"Erro inesperado no RealESRGAN: resultado inválido para {img_path if img_path else 'imagem desconhecida'}: {type(upscale_result)}. Usando upscale simples.")
+                        # Limpa o cache corrompido se existir
+                        if model_cache_hash:
+                            try:
+                                cache_path = get_model_cache_path(model_cache_hash)
+                                if cache_path:
+                                    os.remove(cache_path)
+                            except Exception:
+                                pass
+                        return self.upscale_simple(img, scale)
+                    upscale_img = upscale_result
+                    # Salva no cache do modelo
+                    if model_cache_hash:
+                        set_model_cache(model_cache_hash, upscale_img)
+                except ImportError:
+                    print("RealESRGAN não disponível (módulo não encontrado), usando upscale simples")
+                    return self.upscale_simple(img, scale)
+                except Exception as e:
+                    print(f"Erro inesperado no RealESRGAN: {e}, usando upscale simples")
+                    return self.upscale_simple(img, scale)
+
+        # 4. Redimensiona para o tamanho final, se necessário
+        if upscale_img is not None and target_size:
+            if not hasattr(upscale_img, 'resize') or not hasattr(upscale_img, 'width'):
+                print(f"[Erro] Objeto inesperado no upscale_img: {type(upscale_img)}. Usando upscale simples.")
+                return self.upscale_simple(img, scale)
+            resized_img = upscale_img.resize(target_size, Image.Resampling.LANCZOS)
+            # Salva no cache final
+            if final_cache_hash:
+                set_final_cache(final_cache_hash, resized_img)
+            return resized_img
+        # fallback
+        return upscale_img if upscale_img is not None else self.upscale_simple(img, scale)def upscale_worker():
+                        nonlocal upscale_result, upscale_error
+                        try:
+                            # CORREÇÃO: Garantir que a imagem está em float32
+                            if isinstance(img, Image.Image):
+                                img_array = np.array(img).astype(np.float32) / 255.0
+                                img_tensor = torch.from_numpy(img_array).to(device).float()
+                            elif isinstance(img, np.ndarray):
+                                if img.dtype != np.float32:
+                                    img = img.astype(np.float32)
+                                img_tensor = torch.from_numpy(img).to(device).float()
+                            elif isinstance(img, torch.Tensor):
+                                if img.dtype != torch.float32:
+                                    img_tensor = img.to(device).float()
+                                else:
+                                    img_tensor = img.to(device)
+                            else:
+                                # Fallback para PIL Image
+                                img_array = np.array(img).astype(np.float32) / 255.0
+                                img_tensor = torch.from_numpy(img_array).to(device).float()
+                            
+                            # Garantir que é float32
+                            if img_tensor.dtype != torch.float32:
+                                img_tensor = img_tensor.float()
+                            
+                            upscale_result = model.predict(img_tensor)
+                        except Exception as e:
+                            upscale_error = str(e)
+                    
                     thread = threading.Thread(target=upscale_worker)
                     thread.daemon = True
                     thread.start()
