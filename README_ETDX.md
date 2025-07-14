@@ -6,10 +6,10 @@ Este módulo permite converter arquivos PDF em arquivos .etdx editáveis, manten
 
 - **Conversão PDF → ETDX**: Converte PDFs em arquivos .etdx editáveis
 - **Detecção automática de tamanho**: Identifica automaticamente o tamanho do papel (A4, A3, A5, etc.)
-- **Upscale inteligente**: Melhora a qualidade de imagens pequenas usando IA (RealESRGAN)
+- **Upscale simples**: Melhora a qualidade de imagens pequenas usando redimensionamento LANCZOS
 - **Múltiplos formatos**: Suporte para JPEG e PNG
 - **Configuração de DPI**: Opções de 300 DPI (padrão) ou 600 DPI (alta qualidade)
-- **Cache inteligente**: Sistema de cache para otimizar processamento
+- **Processamento otimizado**: Sistema otimizado para melhor performance
 - **Multiprocessing**: Processamento paralelo para melhor performance
 
 ## Instalação
@@ -19,16 +19,7 @@ Este módulo permite converter arquivos PDF em arquivos .etdx editáveis, manten
 pip install -r requirements.txt
 ```
 
-### Dependências opcionais (para upscale inteligente)
-```bash
-# Para GPU (recomendado se disponível)
-pip install torch==2.2.2+cu121 torchvision==0.17.2+cu121 torchaudio==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-pip install huggingface_hub==0.19.4 py-real-esrgan==2.0.0
 
-# Para CPU (universal)
-pip install torch==2.2.2+cpu torchvision==0.17.2+cpu torchaudio==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
-pip install huggingface_hub==0.19.4 py-real-esrgan==2.0.0
-```
 
 ## Uso
 

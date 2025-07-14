@@ -4,7 +4,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import white
 from PIL import Image
 from PIL.Image import DecompressionBombError
-from .robust_realesrgan import create_robust_realesrgan
+
 # Desativa o limite de pixels do Pillow
 Image.MAX_IMAGE_PIXELS = None
 import zipfile
@@ -26,20 +26,14 @@ if getattr(sys, 'frozen', False):
     # Executando como executável compilado
     multiprocessing.freeze_support()
 
-# Lock global para RealESRGAN - deve ser multiprocessing.Lock() para funcionar com Pool
-realesrgan_lock = Lock()
+# Lock global para upscaling - deve ser multiprocessing.Lock() para funcionar com Pool
+upscale_lock = Lock()
 
 # Flag para controlar se o multiprocessing está funcionando
 # Em executáveis compilados, desabilita por padrão para evitar problemas
 MULTIPROCESSING_AVAILABLE = not getattr(sys, 'frozen', False)
 
-# Flag para controlar se o RealESRGAN está disponível
-# Em executáveis compilados, sempre False para reduzir o tamanho do build
-if getattr(sys, 'frozen', False):
-    REALESRGAN_AVAILABLE = False
-    print("Executável compilado detectado - IA desabilitada para reduzir tamanho do build")
-else:
-    REALESRGAN_AVAILABLE = True
+
 
 # Diretórios de cache em disco (apenas para execução direta em Python)
 if not getattr(sys, 'frozen', False):
@@ -178,8 +172,21 @@ if not getattr(sys, 'frozen', False):
 def get_image_hash(img_path, scale_factor, target_size=None):
     """Gera um hash único para a imagem baseado no caminho e fator de escala"""
     try:
+        # Para páginas processadas (que não são arquivos reais), usar um hash baseado no conteúdo
+        if isinstance(img_path, str) and img_path.startswith('page_'):
+            # Hash baseado no nome da página e parâmetros
+            content_hash = hashlib.md5(f"{img_path}_{scale_factor}".encode()).hexdigest()
+            return content_hash
+        
         # Hash do caminho do arquivo
         path_hash = hashlib.md5(str(img_path).encode()).hexdigest()
+        
+        # Verificar se o arquivo existe antes de tentar acessar seus metadados
+        if not os.path.exists(img_path):
+            # Se o arquivo não existe, usar apenas o caminho e escala
+            scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
+            final_hash = hashlib.md5(f"{path_hash}_{scale_hash}".encode()).hexdigest()
+            return final_hash
         
         # Hash dos metadados da imagem (tamanho, data de modificação)
         stat = os.stat(img_path)
@@ -200,7 +207,19 @@ def get_image_hash(img_path, scale_factor, target_size=None):
 def get_model_cache_hash(img_path, scale_factor):
     """Hash para o cache do resultado do modelo (sem target_size)"""
     try:
+        # Para páginas processadas, usar hash baseado no conteúdo
+        if isinstance(img_path, str) and img_path.startswith('page_'):
+            content_hash = hashlib.md5(f"{img_path}_{scale_factor}".encode()).hexdigest()
+            return content_hash
+        
         path_hash = hashlib.md5(str(img_path).encode()).hexdigest()
+        
+        # Verificar se o arquivo existe
+        if not os.path.exists(img_path):
+            scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
+            final_hash = hashlib.md5(f"{path_hash}_{scale_hash}".encode()).hexdigest()
+            return final_hash
+        
         stat = os.stat(img_path)
         metadata = f"{stat.st_size}_{stat.st_mtime}"
         metadata_hash = hashlib.md5(metadata.encode()).hexdigest()
@@ -214,7 +233,21 @@ def get_model_cache_hash(img_path, scale_factor):
 def get_final_cache_hash(img_path, scale_factor, target_size):
     """Hash para o cache do resultado final (inclui target_size)"""
     try:
+        # Para páginas processadas, usar hash baseado no conteúdo
+        if isinstance(img_path, str) and img_path.startswith('page_'):
+            size_hash = hashlib.md5(f"{target_size[0]}_{target_size[1]}".encode()).hexdigest()
+            content_hash = hashlib.md5(f"{img_path}_{scale_factor}_{size_hash}".encode()).hexdigest()
+            return content_hash
+        
         path_hash = hashlib.md5(str(img_path).encode()).hexdigest()
+        
+        # Verificar se o arquivo existe
+        if not os.path.exists(img_path):
+            scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
+            size_hash = hashlib.md5(f"{target_size[0]}_{target_size[1]}".encode()).hexdigest()
+            final_hash = hashlib.md5(f"{path_hash}_{scale_hash}_{size_hash}".encode()).hexdigest()
+            return final_hash
+        
         stat = os.stat(img_path)
         metadata = f"{stat.st_size}_{stat.st_mtime}"
         metadata_hash = hashlib.md5(metadata.encode()).hexdigest()
@@ -226,36 +259,11 @@ def get_final_cache_hash(img_path, scale_factor, target_size):
         print(f"Erro ao gerar hash final para {img_path}: {e}")
         return None
 
-# Cache para o modelo RealESRGAN (evita recarregar o objeto do modelo, não as imagens)
-_realesrgan_model_cache = {}
-_realesrgan_cache_lock = Lock()
+# Cache para modelos de upscaling (evita recarregar os objetos dos modelos)
+_upscale_model_cache = {}
+_upscale_cache_lock = Lock()
 
-def test_realesrgan_availability():
-    """Testa se o RealESRGAN está disponível e funcionando"""
-    global REALESRGAN_AVAILABLE
-    try:
-        # Teste básico de importação
-        from py_real_esrgan.model import RealESRGAN
-        import torch
-        
-        # Teste básico de dispositivo
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(f"RealESRGAN disponível - usando dispositivo: {device}")
-        REALESRGAN_AVAILABLE = True
-        return True
-        
-    except ImportError:
-        print("RealESRGAN não disponível (módulo não encontrado)")
-        REALESRGAN_AVAILABLE = False
-        return False
-    except Exception as e:
-        print(f"Erro ao testar RealESRGAN: {e}")
-        REALESRGAN_AVAILABLE = False
-        return False
-
-# Testa disponibilidade do RealESRGAN na inicialização (apenas para execução direta em Python)
-if not getattr(sys, 'frozen', False):
-    test_realesrgan_availability()
+# A disponibilidade do HF_UPSCALE_AVAILABLE é testada no módulo hf_upscaler
 
 class PDFGenerator:
     def __init__(self, ref_path):
@@ -337,20 +345,17 @@ class PDFGenerator:
             target_px_width = int(img_width_inch * dpi)
             target_px_height = int(img_height_inch * dpi)
             
-            # Upscale inteligente apenas para execução direta em Python
-            if upscale and not getattr(sys, 'frozen', False) and (img.width < target_px_width or img.height < target_px_height):
+            # Upscale simples quando necessário
+            if upscale and (img.width < target_px_width or img.height < target_px_height):
                 scale_factor = max(target_px_width / img.width, target_px_height / img.height)
-                # RealESRGAN suporta apenas 2x, 4x, 8x
                 if scale_factor > 1.5:
                     if scale_factor <= 2:
                         scale_factor = 2
                     elif scale_factor <= 4:
                         scale_factor = 4
-                    elif scale_factor <= 8:
-                        scale_factor = 8
                     else:
-                        scale_factor = 8  # Máximo 8x para evitar problemas
-                    # Upscale simples em workers (sem RealESRGAN)
+                        scale_factor = 4  # Máximo 4x para evitar problemas
+                    # Upscale simples
                     new_width = int(img.width * scale_factor)
                     new_height = int(img.height * scale_factor)
                     img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
@@ -400,8 +405,9 @@ class PDFGenerator:
         return None
 
     def get_paper_size(self, paper_size_id, dpi=300):
-        # Tamanhos permitidos (apenas os da imagem fornecida)
+        # Mapeamento completo de paperSizeId para tamanhos em mm
         mm_sizes = {
+            # Tamanhos padrão
             '3.5x5': (89, 127),           # 3,5 x 5 pol. (89 x 127 mm)
             '5x7': (127, 178),            # 5 x 7 pol. (127 x 178 mm)
             '4x6': (102, 152),            # 4 x 6 pol. (102 x 152 mm)
@@ -409,6 +415,25 @@ class PDFGenerator:
             '8x10': (203, 254),           # 8 x 10 pol. (203 x 254 mm)
             'Carta': (216, 279),          # Carta (216 x 279 mm)
             'Oficio': (216, 356),         # Oficio (216 x 356 mm)
+            # Mapeamento de paperSizeId para tamanhos
+            'LB': (89, 127),              # 3,5 x 5 pol.
+            '2L': (127, 178),             # 5 x 7 pol.
+            'KG': (102, 152),             # 4 x 6 pol.
+            '6G': (203, 254),             # 8 x 10 pol.
+            'LT': (216, 279),             # Carta
+            'LG': (216, 356),             # Oficio
+            'HG': (148, 221),             # 5 x 7 pol. (altura)
+            'S2': (187, 191),             # 7 x 7 pol.
+            'A5': (148, 210),             # A5
+            'S1': (210, 210),             # A4 quadrado
+            'A3': (297, 420),             # A3
+            'A2': (420, 594),             # A2
+            'HV': (102, 178),             # 4 x 7 pol.
+            '5A': (148, 210),             # A5
+            'CA': (33, 52),               # Cartão
+            'MS': (34, 55),               # Mini cartão
+            '3A': (297, 420),             # A3
+            '4G': (144, 174),             # 5 x 7 pol. (largura)
         }
         if paper_size_id not in mm_sizes:
             raise ValueError(f"Tamanho de papel não permitido: {paper_size_id}. Tamanhos aceitos: {list(mm_sizes.keys())}")
@@ -476,272 +501,15 @@ class PDFGenerator:
         except Exception as e:
             print(f"Erro ao adicionar imagem {image_path}: {e}")
 
-    def upscale_simple(self, img, scale=2):
-        """Upscale simples usando LANCZOS - fallback quando RealESRGAN não está disponível"""
-        new_width = int(img.width * scale)
-        new_height = int(img.height * scale)
-        return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-    def upscale_realesrgan(self, img, scale=2, timeout=300, img_path=None, target_size=None):
-        """Upscale usando RealESRGAN robusto com fallback automático"""
-        # Em executáveis compilados, sempre usar upscale simples
-        if getattr(sys, 'frozen', False):
-            print("Executável compilado detectado - usando upscale simples")
-            return self.upscale_simple(img, scale)
-        
-        if not REALESRGAN_AVAILABLE:
-            print("RealESRGAN não disponível, usando upscale simples")
-            return self.upscale_simple(img, scale)
 
-        # 1. Verificar cache final primeiro (imagem já no tamanho desejado)
-        final_cache_hash = None
-        if img_path and target_size:
-            final_cache_hash = get_final_cache_hash(img_path, scale, target_size)
-            if final_cache_hash:
-                img_cache = get_final_cache(final_cache_hash)
-                if img_cache is not None:
-                    print(f"Cache final hit para {img_path} (escala x{scale}, size={target_size})")
-                    return img_cache
 
-        # 2. Verificar cache do modelo
-        model_cache_hash = get_model_cache_hash(img_path, scale) if img_path else None
-        upscale_img = None
-        if model_cache_hash:
-            upscale_img = get_model_cache(model_cache_hash)
-            if upscale_img is not None:
-                print(f"Cache do modelo hit para {img_path} (escala x{scale})")
-                if target_size:
-                    upscale_img = upscale_img.resize(target_size, Image.Resampling.LANCZOS)
-                    # Salva no cache final
-                    if final_cache_hash:
-                        set_final_cache(final_cache_hash, upscale_img)
-                return upscale_img
 
-        # 3. Usar RealESRGAN robusto com fallback automático
-        if upscale_img is None:
-            with realesrgan_lock:
-                try:
-                    cache_key = f"robust_model_{scale}"
-                    model = None
-                    if cache_key in _realesrgan_model_cache:
-                        model = _realesrgan_model_cache[cache_key]
-                    else:
-                        print(f"Carregando RealESRGAN robusto x{scale}...")
-                        
-                        # Usar RealESRGAN robusto
-                        try:
-                            from robust_realesrgan import create_robust_realesrgan
-                            preferred_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                            model = create_robust_realesrgan(preferred_device, scale=scale)
-                        except ImportError:
-                            # Fallback para RealESRGAN original
-                            from py_real_esrgan.model import RealESRGAN
-                            device = torch.device('cpu')  # Usar CPU por segurança
-                            model = RealESRGAN(device, scale=scale)
-                            weights_path = f"weights/RealESRGAN_x{scale}.pth"
-                            if os.path.exists(weights_path):
-                                model.load_weights(weights_path, download=False)
-                            else:
-                                model.load_weights(weights_path, download=True)
-                        
-                        _realesrgan_model_cache[cache_key] = model
-                        print(f"RealESRGAN robusto x{scale} carregado com sucesso")
-                    
-                    upscale_result = None
-                    upscale_error = None
-                    def upscale_worker():
-                        nonlocal upscale_result, upscale_error
-                        try:
-                            # Usar método predict do modelo robusto
-                            if hasattr(model, 'predict'):
-                                upscale_result = model.predict(img)
-                            else:
-                                # Fallback para método original
-                                upscale_result = model.predict(img)
-                        except Exception as e:
-                            upscale_error = str(e)
-                    
-                    thread = threading.Thread(target=upscale_worker)
-                    thread.daemon = True
-                    thread.start()
-                    thread.join(timeout=timeout)
-                    if thread.is_alive():
-                        print(f"Timeout ao processar imagem com RealESRGAN (>{timeout}s), usando upscale simples")
-                        return self.upscale_simple(img, scale)
-                    if upscale_error:
-                        print(f"Erro no RealESRGAN: {upscale_error}, usando upscale simples")
-                        return self.upscale_simple(img, scale)
-                    if upscale_result is None or not hasattr(upscale_result, 'width'):
-                        print(f"Erro inesperado no RealESRGAN: resultado inválido para {img_path if img_path else 'imagem desconhecida'}: {type(upscale_result)}. Usando upscale simples.")
-                        # Limpa o cache corrompido se existir
-                        if model_cache_hash:
-                            try:
-                                cache_path = get_model_cache_path(model_cache_hash)
-                                if cache_path:
-                                    os.remove(cache_path)
-                            except Exception:
-                                pass
-                        return self.upscale_simple(img, scale)
-                    upscale_img = upscale_result
-                    # Salva no cache do modelo
-                    if model_cache_hash:
-                        set_model_cache(model_cache_hash, upscale_img)
-                except ImportError:
-                    print("RealESRGAN não disponível (módulo não encontrado), usando upscale simples")
-                    return self.upscale_simple(img, scale)
-                except Exception as e:
-                    print(f"Erro inesperado no RealESRGAN: {e}, usando upscale simples")
-                    return self.upscale_simple(img, scale)
-
-        # 4. Redimensiona para o tamanho final, se necessário
-        if upscale_img is not None and target_size:
-            if not hasattr(upscale_img, 'resize') or not hasattr(upscale_img, 'width'):
-                print(f"[Erro] Objeto inesperado no upscale_img: {type(upscale_img)}. Usando upscale simples.")
-                return self.upscale_simple(img, scale)
-            resized_img = upscale_img.resize(target_size, Image.Resampling.LANCZOS)
-            # Salva no cache final
-            if final_cache_hash:
-                set_final_cache(final_cache_hash, resized_img)
-            return resized_img
-        # fallback
-        return upscale_img if upscale_img is not None else self.upscale_simple(img, scale)def upscale_worker():
-                        nonlocal upscale_result, upscale_error
-                        try:
-                            # CORREÇÃO: Garantir que a imagem está em float32
-                            if isinstance(img, Image.Image):
-                                img_array = np.array(img).astype(np.float32) / 255.0
-                                img_tensor = torch.from_numpy(img_array).to(device).float()
-                            elif isinstance(img, np.ndarray):
-                                if img.dtype != np.float32:
-                                    img = img.astype(np.float32)
-                                img_tensor = torch.from_numpy(img).to(device).float()
-                            elif isinstance(img, torch.Tensor):
-                                if img.dtype != torch.float32:
-                                    img_tensor = img.to(device).float()
-                                else:
-                                    img_tensor = img.to(device)
-                            else:
-                                # Fallback para PIL Image
-                                img_array = np.array(img).astype(np.float32) / 255.0
-                                img_tensor = torch.from_numpy(img_array).to(device).float()
-                            
-                            # Garantir que é float32
-                            if img_tensor.dtype != torch.float32:
-                                img_tensor = img_tensor.float()
-                            
-                            upscale_result = model.predict(img_tensor)
-                        except Exception as e:
-                            upscale_error = str(e)
-                    
-                    thread = threading.Thread(target=upscale_worker)
-                    thread.daemon = True
-                    thread.start()
-                    thread.join(timeout=timeout)
-                    if thread.is_alive():
-                        print(f"Timeout ao processar imagem com RealESRGAN (>{timeout}s), usando upscale simples")
-                        return self.upscale_simple(img, scale)
-                    if upscale_error:
-                        print(f"Erro no RealESRGAN: {upscale_error}, usando upscale simples")
-                        return self.upscale_simple(img, scale)
-                    if upscale_result is None or not hasattr(upscale_result, 'width'):
-                        print(f"Erro inesperado no RealESRGAN: resultado inválido para {img_path if img_path else 'imagem desconhecida'}: {type(upscale_result)}. Usando upscale simples.")
-                        # Limpa o cache corrompido se existir
-                        if model_cache_hash:
-                            try:
-                                cache_path = get_model_cache_path(model_cache_hash)
-                                if cache_path:
-                                    os.remove(cache_path)
-                            except Exception:
-                                pass
-                        return self.upscale_simple(img, scale)
-                    upscale_img = upscale_result
-                    # Salva no cache do modelo
-                    if model_cache_hash:
-                        set_model_cache(model_cache_hash, upscale_img)
-                except ImportError:
-                    print("RealESRGAN não disponível (módulo não encontrado), usando upscale simples")
-                    return self.upscale_simple(img, scale)
-                except Exception as e:
-                    print(f"Erro inesperado no RealESRGAN: {e}, usando upscale simples")
-                    return self.upscale_simple(img, scale)
-
-        # 4. Redimensiona para o tamanho final, se necessário
-        if upscale_img is not None and target_size:
-            if not hasattr(upscale_img, 'resize') or not hasattr(upscale_img, 'width'):
-                print(f"[Erro] Objeto inesperado no upscale_img: {type(upscale_img)}. Usando upscale simples.")
-                return self.upscale_simple(img, scale)
-            resized_img = upscale_img.resize(target_size, Image.Resampling.LANCZOS)
-            # Salva no cache final
-            if final_cache_hash:
-                set_final_cache(final_cache_hash, resized_img)
-            return resized_img
-        # fallback
-        return upscale_img if upscale_img is not None else self.upscale_simple(img, scale)
-
-    def preprocess_image_with_upscale(self, args):
-        # Função para processamento SEQUENCIAL COM upscale (usando RealESRGAN)
-        (img_path, photo_data, page_size, json_page_size, dpi, img_format, jpeg_quality) = args
-        try:
-            img = Image.open(img_path).convert('RGB')
-            original_width, original_height = photo_data['originalsize']
-            center = photo_data['center']
-            scale = photo_data['scale']
-            # Espaço visual da imagem no PDF (em pontos)
-            scale_x = page_size[0] / json_page_size[0]
-            scale_y = page_size[1] / json_page_size[1]
-            img_width_pt = original_width * scale * scale_x
-            img_height_pt = original_height * scale * scale_y
-            img_width_inch = img_width_pt / 72
-            img_height_inch = img_height_pt / 72
-            target_px_width = int(img_width_inch * dpi)
-            target_px_height = int(img_height_inch * dpi)
-            target_size = (target_px_width, target_px_height)
-            
-            # Upscale inteligente apenas para execução direta em Python
-            if not getattr(sys, 'frozen', False) and img.width < target_px_width or img.height < target_px_height:
-                scale_factor = max(target_px_width / img.width, target_px_height / img.height)
-                # RealESRGAN suporta apenas 2x, 4x, 8x
-                if scale_factor > 1.5:
-                    if scale_factor <= 2:
-                        scale_factor = 2
-                    elif scale_factor <= 4:
-                        scale_factor = 4
-                    elif scale_factor <= 8:
-                        scale_factor = 8
-                    else:
-                        scale_factor = 8  # Máximo 8x para evitar problemas
-                    print(f"Aplicando upscale x{scale_factor} na imagem {img_path.name}")
-                    img = self.upscale_realesrgan(img, scale=scale_factor, img_path=img_path, target_size=target_size)
-            
-            # Redimensionar para o tamanho final
-            if target_px_width > 0 and target_px_height > 0:
-                img = img.resize((target_px_width, target_px_height), Image.Resampling.LANCZOS)
-            img_bytes = io.BytesIO()
-            if img_format == 'jpeg':
-                img.save(img_bytes, format='JPEG', quality=jpeg_quality, optimize=True)
-            else:
-                img.save(img_bytes, format='PNG', optimize=True)
-            img_bytes.seek(0)
-            return (photo_data, img_bytes, img_width_pt, img_height_pt)
-        except Exception as e:
-            print(f"Erro ao processar imagem {img_path}: {e}")
-            return (photo_data, None, 0, 0)
-
-    def create_pdf(self, output_filename="output.pdf", dpi=300, img_format='jpeg', jpeg_quality=90, progress_callback=None, upscale=False):
+    def create_pdf(self, output_filename="output.pdf", dpi=300, img_format='jpeg', jpeg_quality=90, progress_callback=None):
         try:
             try:
-                # Em executáveis compilados, sempre desabilitar upscale
-                if getattr(sys, 'frozen', False):
-                    if upscale:
-                        print("Executável compilado detectado - upscale inteligente desabilitado")
-                    upscale = False
-                # Verificar se o upscale está disponível
-                elif upscale and not REALESRGAN_AVAILABLE:
-                    print("⚠️  Upscale inteligente solicitado mas RealESRGAN não está disponível")
-                    print("   Usando processamento normal sem upscale")
-                    upscale = False
                 print(f"Iniciando geração de PDF: {output_filename}")
-                print(f"Configurações: DPI={dpi}, formato={img_format}, qualidade={jpeg_quality}, upscale={upscale}")
+                print(f"Configurações: DPI={dpi}, formato={img_format}, qualidade={jpeg_quality}")
                 self.load_project_info()
                 self.load_page_list()
                 self.load_master_template()
@@ -763,91 +531,30 @@ class PDFGenerator:
                     c.rect(0, 0, page_size[0], page_size[1], fill=1)
                     photos = edited_paper.get('photos', [])
                     print(f"Processando página {idx+1}/{total_pages} ({page_id}): {len(photos)} imagens")
-                    if upscale:
-                        # Separar imagens que precisam de upscale das que não precisam
-                        images_no_upscale = []
-                        images_with_upscale = []
-                        for photo in photos:
-                            image_path = photo['imagepath']
-                            page_dir = self.ref_path / page_id
-                            full_image_path = page_dir / image_path
-                            # Verificar se a imagem precisa de upscale
-                            img = Image.open(full_image_path).convert('RGB')
-                            original_width, original_height = photo['originalsize']
-                            center = photo['center']
-                            scale = photo['scale']
-                            scale_x = page_size[0] / json_page_size[0]
-                            scale_y = page_size[1] / json_page_size[1]
-                            img_width_pt = original_width * scale * scale_x
-                            img_height_pt = original_height * scale * scale_y
-                            img_width_inch = img_width_pt / 72
-                            img_height_inch = img_height_pt / 72
-                            target_px_width = int(img_width_inch * dpi)
-                            target_px_height = int(img_height_inch * dpi)
-                            if img.width < target_px_width or img.height < target_px_height:
-                                scale_factor = max(target_px_width / img.width, target_px_height / img.height)
-                                if scale_factor > 1.5:
-                                    images_with_upscale.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality))
-                                else:
-                                    images_no_upscale.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality))
-                            else:
-                                images_no_upscale.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality))
-                        # Processar imagens sem upscale
-                        results_no_upscale = []
-                        if images_no_upscale:
-                            if MULTIPROCESSING_AVAILABLE and len(images_no_upscale) > 1:
-                                try:
-                                    with Pool(processes=min(cpu_count(), len(images_no_upscale))) as pool:
-                                        results_no_upscale = pool.map(self._preprocess_image_no_upscale_worker, images_no_upscale)
-                                except Exception as e:
-                                    print(f"Erro no multiprocessing, usando processamento sequencial: {e}")
-                                    # Fallback para processamento sequencial
-                                    results_no_upscale = []
-                                    for args in images_no_upscale:
-                                        result = self._preprocess_image_no_upscale_worker(args)
-                                        results_no_upscale.append(result)
-                            else:
-                                # Processamento sequencial
-                                for args in images_no_upscale:
-                                    result = self._preprocess_image_no_upscale_worker(args)
-                                    results_no_upscale.append(result)
-                        # Processar imagens com upscale sequencialmente (uma por vez)
-                        results_with_upscale = []
-                        for i, args in enumerate(images_with_upscale):
-                            print(f"Processando imagem {i+1}/{len(images_with_upscale)} com upscale...")
-                            try:
-                                result = self.preprocess_image_with_upscale(args)
-                            except Exception as e:
-                                print(f"Erro ao fazer upscale da imagem: {e}")
-                                result = (args[1], None, 0, 0)
-                            results_with_upscale.append(result)
-                        # Combinar resultados
-                        results = results_no_upscale + results_with_upscale
-                    else:
-                        # Processamento normal sem upscale
-                        args_list = []
-                        for photo in photos:
-                            image_path = photo['imagepath']
-                            page_dir = self.ref_path / page_id
-                            full_image_path = page_dir / image_path
-                            args_list.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality, upscale))
-                        if MULTIPROCESSING_AVAILABLE and len(args_list) > 1:
-                            try:
-                                with Pool(processes=min(cpu_count(), len(args_list))) as pool:
-                                    results = pool.map(self._preprocess_image_worker, args_list)
-                            except Exception as e:
-                                print(f"Erro no multiprocessing, usando processamento sequencial: {e}")
-                                # Fallback para processamento sequencial
-                                results = []
-                                for args in args_list:
-                                    result = self._preprocess_image_worker(args)
-                                    results.append(result)
-                        else:
-                            # Processamento sequencial
+                    # Processamento normal
+                    args_list = []
+                    for photo in photos:
+                        image_path = photo['imagepath']
+                        page_dir = self.ref_path / page_id
+                        full_image_path = page_dir / image_path
+                        args_list.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality, False))
+                    if MULTIPROCESSING_AVAILABLE and len(args_list) > 1:
+                        try:
+                            with Pool(processes=min(cpu_count(), len(args_list))) as pool:
+                                results = pool.map(self._preprocess_image_worker, args_list)
+                        except Exception as e:
+                            print(f"Erro no multiprocessing, usando processamento sequencial: {e}")
+                            # Fallback para processamento sequencial
                             results = []
                             for args in args_list:
                                 result = self._preprocess_image_worker(args)
                                 results.append(result)
+                    else:
+                        # Processamento sequencial
+                        results = []
+                        for args in args_list:
+                            result = self._preprocess_image_worker(args)
+                            results.append(result)
                     for (photo, img_bytes, img_width_pt, img_height_pt) in results:
                         if img_bytes is not None:
                             center = photo['center']
@@ -866,7 +573,7 @@ class PDFGenerator:
             except DecompressionBombError as e:
                 print(f"Erro de imagem gigante: {e}. Gerando PDF automaticamente em 300 DPI.")
                 if dpi != 300:
-                    self.create_pdf(output_filename, dpi=300, img_format=img_format, jpeg_quality=jpeg_quality, progress_callback=progress_callback, upscale=upscale)
+                    self.create_pdf(output_filename, dpi=300, img_format=img_format, jpeg_quality=jpeg_quality, progress_callback=progress_callback)
                 else:
                     raise
         finally:

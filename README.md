@@ -1,197 +1,154 @@
-# Gerador de PDF e ETDX
+# GeneratePdfEtdx
 
-Aplicação para gerar PDFs a partir de arquivos .etdx e converter PDFs em arquivos .etdx editáveis, com suporte a upscale inteligente de imagens.
+Gerador de PDFs e arquivos .etdx com suporte a upscaling simples.
 
-## Funcionalidades
+## 🚀 Funcionalidades
 
-### 📄 Gerador de PDF (.etdx → PDF)
-- ✅ Geração de PDF a partir de arquivos .etdx
-- ✅ Suporte a múltiplos tamanhos de papel (A4, A3, A5, etc.)
-- ✅ Upscale inteligente de imagens usando RealESRGAN (apenas execução direta)
-- ✅ Interface gráfica amigável
-- ✅ Processamento paralelo de imagens (quando disponível)
-- ✅ Configurações de qualidade (DPI, formato de imagem, qualidade JPEG)
-- ✅ Build otimizado sem dependências de IA (executáveis mais leves)
+- **Geração de PDFs** a partir de arquivos .etdx
+- **Geração de arquivos .etdx** a partir de PDFs
+- **Upscaling simples** usando redimensionamento LANCZOS
+- **Suporte a múltiplas escalas**: x2, x4
+- **Processamento otimizado** para melhor performance
+- **Interface gráfica** intuitiva
 
-### 🔄 Gerador de ETDX (.pdf → .etdx)
-- ✅ Conversão de PDFs em arquivos .etdx editáveis
-- ✅ Detecção automática de tamanho de papel
-- ✅ Upscale inteligente para melhorar qualidade
-- ✅ Interface gráfica dedicada
-- ✅ Processamento paralelo otimizado
-- ✅ Cache inteligente para melhor performance
+## 📋 Requisitos
 
-## Modos de Execução
-
-### 🐍 Execução Direta (Python)
-- **Funcionalidades completas**: Inclui upscale inteligente com RealESRGAN
-- **Tamanho**: Maior devido às dependências de IA
-- **Performance**: Melhor para imagens pequenas com upscale
-
-### 📦 Executável Compilado
-- **Funcionalidades básicas**: Apenas redimensionamento simples
-- **Tamanho**: Muito menor (sem dependências de IA)
-- **Performance**: Rápido para imagens normais
-
-## Instalação
-
-### Dependências Básicas (obrigatórias)
 ```bash
 pip install -r requirements.txt
 ```
 
-### Dependências de IA (opcional - apenas para execução direta)
+**Requisitos de sistema:**
+- Python 3.8+
+- Mínimo 2GB RAM
+
+## 🛠️ Instalação
+
+### Windows:
 ```bash
-pip install -r requirements-ai.txt
+pip install -r requirements.txt
 ```
 
-## Uso
-
-### 📄 Gerador de PDF (.etdx → PDF)
-
-#### Interface Gráfica
+### Linux/Mac:
 ```bash
-python gui.py
+pip install -r requirements.txt
 ```
 
-#### Linha de Comando
-```bash
-# Gerar PDF a partir de arquivo .etdx
-python cli.py arquivo.etdx --output saida.pdf
+## 🎯 Como usar
 
-# Com configurações personalizadas
-python cli.py arquivo.etdx --output saida.pdf --dpi 600 --format png --quality 95
-
-# Usar upscale inteligente (apenas execução direta)
-python cli.py arquivo.etdx --upscale
-```
-
-### 🔄 Gerador de ETDX (.pdf → .etdx)
-
-#### Interface Gráfica
+### Interface Gráfica (Recomendado)
 ```bash
 python etdx_gui.py
 ```
 
-#### Linha de Comando
+### Linha de Comando
+
+#### Gerar PDF a partir de .etdx:
 ```bash
-# Converter PDF para .etdx
-python etdx_cli.py documento.pdf --output documento.etdx
-
-# Com configurações personalizadas
-python etdx_cli.py documento.pdf --output documento.etdx --dpi 600 --format png --upscale
-
-# Ajuda
-python etdx_cli.py --help
+python etdx_cli.py --etdx arquivo.etdx --output saida.pdf --dpi 300 --upscale
 ```
 
-## Compilação
-
-Para criar um executável otimizado (sem IA):
-
+#### Gerar .etdx a partir de PDF:
 ```bash
-# Windows
-build.bat
-
-# Linux/Mac
-pyinstaller --clean --onefile --windowed --icon=icons/pdf_gear.ico --name=GeradorPDF gui.py
+python etdx_cli.py --pdf arquivo.pdf --output saida.etdx --dpi 300 --upscale
 ```
 
-**Nota**: O executável compilado não inclui funcionalidades de IA para reduzir o tamanho. Para usar IA, execute diretamente com Python.
+### Parâmetros disponíveis:
+- `--dpi`: Resolução (padrão: 300)
+- `--upscale`: Ativar upscaling simples
+- `--format`: Formato de imagem (jpeg/png)
+- `--quality`: Qualidade JPEG (1-100)
 
-## Diferenças entre Modos
+## 🔧 Configurações Avançadas
 
-| Funcionalidade | Execução Direta | Executável Compilado |
-|----------------|-----------------|---------------------|
-| Upscale Inteligente | ✅ RealESRGAN | ❌ Redimensionamento simples |
-| Cache de Imagens | ✅ Completo | ❌ Desabilitado |
-| Multiprocessing | ✅ Ativo | ⚠️ Limitado |
-| Tamanho do Build | Grande (~500MB+) | Pequeno (~50MB) |
-| Dependências | Todas | Apenas básicas |
+### Processamento de Imagens
 
-## Solução de Problemas
+O sistema inclui processamento otimizado:
+- **Fallback para CPU** quando GPU está sem memória
+- **Limpeza automática** de cache CUDA
+- **Configuração otimizada** de alocação de memória
 
-### Upscale Inteligente Não Disponível
+### Cache Inteligente
 
-**Executável Compilado:**
-- O upscale inteligente é intencionalmente desabilitado em executáveis compilados
-- Use redimensionamento simples ou execute diretamente com Python
+- **Cache de modelo**: Evita recarregar modelos de IA
+- **Cache de resultado**: Armazena imagens processadas
+- **Cache em disco**: Para execução direta em Python
+- **Limpeza automática**: Ao finalizar processamento
 
-**Execução Direta:**
-- Verifique se instalou as dependências de IA: `pip install -r requirements-ai.txt`
-- Verifique se o arquivo `weights/RealESRGAN_x4.pth` existe
-- O aplicativo automaticamente usa upscale simples como fallback
+## 🐛 Solução de Problemas
 
-### Erro de Multiprocessing
+### Erro de Memória CUDA
+Se você encontrar erros de "CUDA out of memory":
 
-Se você encontrar erros relacionados ao multiprocessing:
+1. **O sistema tentará automaticamente usar CPU**
+2. **Limpe outros programas** que usam GPU
+3. **Reduza o DPI** (use 150 ou 200 em vez de 300)
+4. **Desative upscaling** se necessário
 
-**Executável Compilado:**
-- O multiprocessing é automaticamente desabilitado para evitar problemas
-- O processamento será sequencial (mais lento, mas estável)
+### Erro de Cache
+Se houver problemas com cache:
 
-**Execução Direta:**
-- O multiprocessing é habilitado por padrão
-- Se houver problemas, o aplicativo automaticamente faz fallback para processamento sequencial
+1. **O sistema limpa automaticamente** o cache corrompido
+2. **Reinicie o programa** se necessário
+3. **Verifique permissões** de escrita no diretório
 
-## Estrutura do Projeto
+### Teste de Funcionamento
+Execute o script de teste para verificar se tudo está funcionando:
+
+```bash
+python test_realesrgan.py
+```
+
+## 📁 Estrutura do Projeto
 
 ```
 GeneratePdfEtdx/
 ├── pdf_generator/
-│   ├── __init__.py
-│   ├── core.py              # Lógica principal de geração de PDF
-│   └── etdx_generator.py    # Lógica de geração de ETDX
-├── icons/                   # Ícones da aplicação
-├── gui.py                   # Interface gráfica (PDF)
-├── cli.py                   # Interface CLI (PDF)
-├── etdx_gui.py             # Interface gráfica (ETDX)
-├── etdx_cli.py             # Interface CLI (ETDX)
-├── executar_gui.bat        # Script para executar GUI PDF
-├── executar_etdx_gui.bat   # Script para executar GUI ETDX
-├── build.bat               # Script de compilação para Windows
-├── runtime_hook.py         # Hook para PyInstaller
-├── requirements.txt        # Dependências básicas
-├── requirements-ai.txt     # Dependências de IA (opcional)
-├── README.md              # Documentação principal
-└── README_ETDX.md         # Documentação específica do ETDX
+│   ├── core.py              # Geração de PDFs
+│   ├── etdx_generator.py    # Geração de .etdx
+│   ├── realesrgan_upscaler.py # Upscaling com Real-ESRGAN
+│   └── etdx_sizes.py        # Tamanhos de papel
+├── etdx_gui.py              # Interface gráfica
+├── etdx_cli.py              # Interface linha de comando
+├── requirements.txt          # Dependências básicas
+├── requirements-ai.txt       # Dependências para IA
+└── test_upscale.py          # Script de teste
 ```
 
-## Configurações
+## 🔄 Changelog
 
-### DPI (Dots Per Inch)
-- **300 DPI**: Padrão, boa qualidade
-- **600 DPI**: Alta qualidade, arquivos maiores
+### v3.0.0 (Atual)
+- ✅ **Migração para Real-ESRGAN 0.3.0**
+- ✅ **Melhor qualidade de upscaling**
+- ✅ **Suporte a múltiplos modelos (x2, x4, x8)**
+- ✅ **Scripts de instalação automatizados**
+- ✅ **Melhor gerenciamento de memória CUDA**
 
-### Formato de Imagem
-- **JPEG**: Menor tamanho, boa qualidade
-- **PNG**: Maior tamanho, qualidade máxima
+### v2.0.0
+- ✅ **Melhor gerenciamento de memória CUDA**
+- ✅ **Fallback automático para CPU**
+- ✅ **Correção de erros de cache**
+- ✅ **Configuração otimizada de memória**
+- ✅ **Detecção automática de dispositivo**
 
-### Qualidade JPEG
-- **80-100**: Quanto maior, melhor a qualidade e maior o arquivo
+### v1.0.0
+- ✅ Geração de PDFs a partir de .etdx
+- ✅ Geração de .etdx a partir de PDFs
+- ✅ Upscaling com modelos Swin2SR
+- ✅ Cache inteligente
 
-### Upscale Inteligente
-- **Execução Direta**: Usa RealESRGAN para melhorar imagens pequenas
-- **Executável Compilado**: Usa redimensionamento simples
+## 📄 Licença
 
-## Dependências
+Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
 
-### Básicas (obrigatórias)
-- `reportlab`: Geração de PDF
-- `Pillow`: Processamento de imagens
-- `pyinstaller`: Compilação (apenas para build)
+## 🤝 Contribuição
 
-### IA (opcional)
-- `torch`: Framework de machine learning
-- `py-real-esrgan`: Upscale inteligente
-- `numpy`: Computação numérica
-- `huggingface_hub`: Modelos pré-treinados
+Contribuições são bem-vindas! Por favor, abra uma issue ou pull request.
 
-## Documentação Adicional
+## 📞 Suporte
 
-Para informações detalhadas sobre o gerador de ETDX, consulte:
-- [README_ETDX.md](README_ETDX.md) - Documentação específica do módulo ETDX
+Se você encontrar problemas:
 
-## Licença
-
-Este projeto está sob a licença MIT. 
+1. **Execute o script de teste**: `python test_upscale.py`
+2. **Verifique os logs** de erro
+3. **Abra uma issue** com detalhes do problema
+4. **Inclua informações** sobre seu sistema e configuração 

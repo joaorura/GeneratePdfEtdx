@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-from pdf_generator.core import PDFGenerator, extract_etdx, REALESRGAN_AVAILABLE, clear_upscale_cache
+from pdf_generator.core import PDFGenerator, extract_etdx, clear_upscale_cache
 import shutil
 import os
 import sys
@@ -62,7 +62,7 @@ class PDFApp:
         self.dpi = tk.IntVar(value=300)
         self.img_format = tk.StringVar(value='jpeg')
         self.jpeg_quality = tk.IntVar(value=90)
-        self.upscale = tk.BooleanVar(value=True)
+
         self.create_widgets()
 
     def create_widgets(self):
@@ -113,33 +113,7 @@ class PDFApp:
         self.quality_entry.pack(side='left', padx=5)
         self.toggle_jpeg_quality()
 
-        # Checkbox para upscale inteligente com status
-        upscale_frame = ttk.Frame(frm)
-        upscale_frame.pack(fill='x', pady=5)
-        
-        # Status do RealESRGAN
-        if getattr(sys, 'frozen', False):
-            status_text = "🚫 Upscale inteligente desabilitado (executável compilado)"
-            status_color = "red"
-            self.upscale.set(False)  # Desabilitar por padrão em executáveis compilados
-        elif REALESRGAN_AVAILABLE:
-            status_text = "✅ Upscale inteligente (RealESRGAN) disponível"
-            status_color = "green"
-        else:
-            status_text = "⚠️ Upscale inteligente não disponível (usando redimensionamento simples)"
-            status_color = "orange"
-            self.upscale.set(False)  # Desabilitar por padrão se não disponível
-        
-        ttk.Label(upscale_frame, text=status_text, foreground=status_color).pack(anchor='w')
-        
-        # Checkbox
-        self.upscale_checkbox = ttk.Checkbutton(
-            upscale_frame, 
-            text='Usar upscale inteligente para melhorar imagens pequenas', 
-            variable=self.upscale,
-            state='disabled' if getattr(sys, 'frozen', False) else ('normal' if REALESRGAN_AVAILABLE else 'disabled')
-        )
-        self.upscale_checkbox.pack(anchor='w')
+
 
         # Barra de progresso
         ttk.Progressbar(frm, variable=self.progress, maximum=100).pack(fill='x', pady=10)
@@ -163,24 +137,6 @@ class PDFApp:
             messagebox.showerror('Erro', 'Selecione um arquivo .etdx válido!')
             return
         
-        # Verificar se upscale foi solicitado mas não está disponível
-        if getattr(sys, 'frozen', False) and self.upscale.get():
-            messagebox.showinfo(
-                'Upscale desabilitado', 
-                'O upscale inteligente está desabilitado em executáveis compilados.\n\n'
-                'O processamento será feito com redimensionamento simples.'
-            )
-            self.upscale.set(False)
-        elif self.upscale.get() and not REALESRGAN_AVAILABLE:
-            result = messagebox.askyesno(
-                'Upscale não disponível', 
-                'O upscale inteligente (RealESRGAN) não está disponível.\n\n'
-                'Deseja continuar com processamento normal (sem upscale)?'
-            )
-            if not result:
-                return
-            self.upscale.set(False)
-        
         self.status.set('Processando...')
         self.progress.set(0)
         threading.Thread(target=self.process_pdf, daemon=True).start()
@@ -194,18 +150,14 @@ class PDFApp:
                 self.status.set(f'Processando página {atual} de {total}...')
             
             # Mostrar informações sobre o processamento
-            if self.upscale.get():
-                self.status.set('Iniciando processamento com upscale inteligente...')
-            else:
-                self.status.set('Iniciando processamento normal...')
+            self.status.set('Iniciando processamento...')
             
             generator.create_pdf(
                 self.output_path.get(),
                 dpi=self.dpi.get(),
                 img_format=self.img_format.get(),
                 jpeg_quality=self.jpeg_quality.get(),
-                progress_callback=progress_callback,
-                upscale=self.upscale.get()
+                progress_callback=progress_callback
             )
             generator.print_summary()
             self.status.set('PDF gerado com sucesso!')

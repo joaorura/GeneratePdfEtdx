@@ -1,26 +1,7 @@
 # ========================================
 # DEPENDENCIAS BASICAS (obrigatorias)
 # ========================================
-reportlab==4.0.4
-Pillow==10.0.1
-pyinstaller==6.6.0
-PyMuPDF==1.23.8
-
-# ========================================
-# DEPENDENCIAS DE IA (opcionais)
-# ========================================
-# Descomente as linhas abaixo se quiser usar IA (apenas para execução direta em Python)
-# numpy<2
-# torch==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-# torchvision==0.17.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-# torchaudio==2.2.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
-# huggingface_hub==0.19.4
-# py-real-esrgan==2.0.0
-
-# ========================================
-# DEPENDENCIAS ALTERNATIVAS
-# ========================================
-# Para CPU (universal, mais lento):
-# torch==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
-# torchvision==0.17.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
-# torchaudio==2.2.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
+reportlab==4.4.2
+Pillow==11.3.0
+pyinstaller==6.14.2
+PyMuPDF==1.26.3

@@ -7,7 +7,7 @@ Ponto de entrada principal para execução via linha de comando
 import sys
 import argparse
 from pathlib import Path
-from pdf_generator.etdx_generator import ETDXGenerator, REALESRGAN_AVAILABLE
+from pdf_generator.etdx_generator import ETDXGenerator
 
 def main():
     parser = argparse.ArgumentParser(description="Gera arquivo .etdx a partir de um PDF")
@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--dpi', type=int, default=300, help='DPI para as imagens (300 ou 600)')
     parser.add_argument('--format', type=str, default='jpeg', choices=['jpeg', 'png'], help='Formato das imagens')
     parser.add_argument('--quality', type=int, default=90, help='Qualidade JPEG (80-100)')
-    parser.add_argument('--upscale', action='store_true', help='Usar upscale inteligente (apenas em execução direta)')
+
     
     args = parser.parse_args()
 
@@ -29,17 +29,12 @@ def main():
         # Cria o gerador
         generator = ETDXGenerator(pdf_path)
         
-        # Verifica se está compilado e ajusta upscale
-        if getattr(sys, 'frozen', False) and args.upscale:
-            print("Executável compilado detectado - upscale inteligente desabilitado")
-            args.upscale = False
+        # Upscale sempre disponível (simples)
         
         generator.create_etdx(
             output_filename=args.output,
             dpi=args.dpi,
-            img_format=args.format,
-            jpeg_quality=args.quality,
-            upscale=args.upscale
+            img_format=args.format
         )
         generator.print_summary()
         print(f'ETDX gerado: {args.output}')
