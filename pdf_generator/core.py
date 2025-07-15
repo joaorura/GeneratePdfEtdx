@@ -263,7 +263,23 @@ def get_final_cache_hash(img_path, scale_factor, target_size):
 _upscale_model_cache = {}
 _upscale_cache_lock = Lock()
 
-# A disponibilidade do HF_UPSCALE_AVAILABLE é testada no módulo hf_upscaler
+# Importar módulo de upscaling com IA
+try:
+    from .ai_upscaler import upscale_image, is_ai_upscaling_available, get_available_devices
+    AI_UPSCALE_AVAILABLE = is_ai_upscaling_available()
+except ImportError:
+    AI_UPSCALE_AVAILABLE = False
+    def upscale_image(img, scale_factor=4, model_name="RealESRGAN_x4", device="auto", target_size=None):
+        # Fallback para upscale simples
+        if target_size:
+            return img.resize(target_size, Image.Resampling.LANCZOS)
+        else:
+            new_width = img.width * scale_factor
+            new_height = img.height * scale_factor
+            return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
+    def get_available_devices():
+        return ["cpu"]
 
 class PDFGenerator:
     def __init__(self, ref_path):
@@ -345,7 +361,7 @@ class PDFGenerator:
             target_px_width = int(img_width_inch * dpi)
             target_px_height = int(img_height_inch * dpi)
             
-            # Upscale simples quando necessário
+            # Upscale com IA quando necessário
             if upscale and (img.width < target_px_width or img.height < target_px_height):
                 scale_factor = max(target_px_width / img.width, target_px_height / img.height)
                 if scale_factor > 1.5:
@@ -355,10 +371,23 @@ class PDFGenerator:
                         scale_factor = 4
                     else:
                         scale_factor = 4  # Máximo 4x para evitar problemas
-                    # Upscale simples
-                    new_width = int(img.width * scale_factor)
-                    new_height = int(img.height * scale_factor)
-                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    
+                    # Usar upscaling com IA se disponível
+                    if AI_UPSCALE_AVAILABLE and not getattr(sys, 'frozen', False):
+                        try:
+                            print(f"Aplicando upscale com IA x{scale_factor} em {img_path.name}")
+                            img = upscale_image(img, scale_factor=scale_factor, target_size=(target_px_width, target_px_height))
+                        except Exception as e:
+                            print(f"Erro no upscale com IA: {e}, usando upscale simples")
+                            # Fallback para upscale simples
+                            new_width = int(img.width * scale_factor)
+                            new_height = int(img.height * scale_factor)
+                            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    else:
+                        # Upscale simples
+                        new_width = int(img.width * scale_factor)
+                        new_height = int(img.height * scale_factor)
+                        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
             # Redimensionar para o tamanho final
             if target_px_width > 0 and target_px_height > 0:
@@ -505,7 +534,7 @@ class PDFGenerator:
 
 
 
-    def create_pdf(self, output_filename="output.pdf", dpi=300, img_format='jpeg', jpeg_quality=90, progress_callback=None):
+    def create_pdf(self, output_filename="output.pdf", dpi=300, img_format='jpeg', jpeg_quality=90, upscale=True, progress_callback=None):
         try:
             try:
                 print(f"Iniciando geração de PDF: {output_filename}")
@@ -537,7 +566,7 @@ class PDFGenerator:
                         image_path = photo['imagepath']
                         page_dir = self.ref_path / page_id
                         full_image_path = page_dir / image_path
-                        args_list.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality, False))
+                        args_list.append((full_image_path, photo, page_size, json_page_size, dpi, img_format, jpeg_quality, upscale))
                     if MULTIPROCESSING_AVAILABLE and len(args_list) > 1:
                         try:
                             with Pool(processes=min(cpu_count(), len(args_list))) as pool:

@@ -16,9 +16,15 @@ def main():
     parser.add_argument('--dpi', type=int, default=300, help='DPI para as imagens (300 ou 600)')
     parser.add_argument('--format', type=str, default='jpeg', choices=['jpeg', 'png'], help='Formato das imagens')
     parser.add_argument('--quality', type=int, default=90, help='Qualidade JPEG (80-100)')
+    parser.add_argument('--upscale', action='store_true', default=True, help='Ativar upscaling (padrão: habilitado)')
+    parser.add_argument('--no-upscale', action='store_true', help='Desabilitar upscaling')
 
     
     args = parser.parse_args()
+    
+    # Ajustar upscale baseado nos argumentos
+    if args.no_upscale:
+        args.upscale = False
 
     pdf_path = Path(args.pdf_path)
     if not pdf_path.exists() or pdf_path.suffix.lower() != '.pdf':
@@ -34,7 +40,8 @@ def main():
         generator.create_etdx(
             output_filename=args.output,
             dpi=args.dpi,
-            img_format=args.format
+            img_format=args.format,
+            upscale=args.upscale
         )
         generator.print_summary()
         print(f'ETDX gerado: {args.output}')

@@ -392,7 +392,7 @@ class ETDXGenerator:
             print(f"Erro geral ao processar página {page_num}: {e}")
             return (page_num, None, 0, 0)
     
-    def create_etdx(self, output_filename: str = "documento_gerado.etdx", dpi: int = 300, img_format: str = 'png', progress_callback: Optional[Callable[[int, int], None]] = None, paper_size_id: Optional[str] = None, fit_mode: str = "fit") -> None:
+    def create_etdx(self, output_filename: str = "documento_gerado.etdx", dpi: int = 300, img_format: str = 'png', upscale: bool = True, progress_callback: Optional[Callable[[int, int], None]] = None, paper_size_id: Optional[str] = None, fit_mode: str = "fit") -> None:
         """Cria um arquivo .etdx a partir do PDF"""
         try:
             print(f"Iniciando geração de ETDX: {output_filename}")
@@ -446,7 +446,7 @@ class ETDXGenerator:
             # Processar páginas
             args_list = []
             for page_num in range(num_pages):
-                args_list.append((page_num, self.pdf_path, dpi, 'png', False)) # Sem upscale
+                args_list.append((page_num, self.pdf_path, dpi, 'png', upscale))
             
             # Processamento normal
             if MULTIPROCESSING_AVAILABLE and len(args_list) > 1:

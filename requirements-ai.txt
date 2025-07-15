@@ -1,0 +1,9 @@
+# ========================================
+# DEPENDENCIAS PARA UPSCALING COM IA
+# ========================================
+
+# ONNX Runtime (com suporte a CUDA)
+onnxruntime-gpu~=1.22.0
+
+# NumPy para processamento de arrays
+numpy~=2.3.1

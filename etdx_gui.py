@@ -61,6 +61,7 @@ class ETDXApp:
         self.status = tk.StringVar(value='Aguardando seleção do arquivo...')
         self.progress = tk.DoubleVar(value=0)
         self.dpi = tk.IntVar(value=300)
+        self.upscale = tk.BooleanVar(value=True)  # Padrão: habilitado
 
         self.fit_mode = tk.StringVar(value='fit')
         self.create_widgets()
@@ -116,7 +117,10 @@ class ETDXApp:
         self.fit_combobox.current(0)
         self.fit_combobox.pack(side='left', padx=5)
 
-
+        # Bloco para upscaling
+        upscale_frame = ttk.Frame(frm)
+        upscale_frame.pack(fill='x', pady=5)
+        ttk.Checkbutton(upscale_frame, text='Upscaling com IA (melhora qualidade)', variable=self.upscale).pack(side='left')
 
         # Barra de progresso
         ttk.Progressbar(frm, variable=self.progress, maximum=100).pack(fill='x', pady=10)
@@ -165,6 +169,7 @@ class ETDXApp:
                 self.output_path.get(),
                 dpi=self.dpi.get(),
                 img_format='png', # Sempre PNG
+                upscale=self.upscale.get(),
                 progress_callback=progress_callback,
                 paper_size_id=selected_key,  # Passa o id correto
                 fit_mode=fit_mode  # Passa o modo de ajuste

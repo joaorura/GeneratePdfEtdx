@@ -62,6 +62,7 @@ class PDFApp:
         self.dpi = tk.IntVar(value=300)
         self.img_format = tk.StringVar(value='jpeg')
         self.jpeg_quality = tk.IntVar(value=90)
+        self.upscale = tk.BooleanVar(value=True)  # Padrão: habilitado
 
         self.create_widgets()
 
@@ -113,7 +114,10 @@ class PDFApp:
         self.quality_entry.pack(side='left', padx=5)
         self.toggle_jpeg_quality()
 
-
+        # Bloco para upscaling
+        upscale_frame = ttk.Frame(frm)
+        upscale_frame.pack(fill='x', pady=5)
+        ttk.Checkbutton(upscale_frame, text='Upscaling com IA (melhora qualidade)', variable=self.upscale).pack(side='left')
 
         # Barra de progresso
         ttk.Progressbar(frm, variable=self.progress, maximum=100).pack(fill='x', pady=10)
@@ -157,6 +161,7 @@ class PDFApp:
                 dpi=self.dpi.get(),
                 img_format=self.img_format.get(),
                 jpeg_quality=self.jpeg_quality.get(),
+                upscale=self.upscale.get(),
                 progress_callback=progress_callback
             )
             generator.print_summary()

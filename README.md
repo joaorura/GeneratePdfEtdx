@@ -6,20 +6,29 @@ Gerador de PDFs e arquivos .etdx com suporte a upscaling simples.
 
 - **Geração de PDFs** a partir de arquivos .etdx
 - **Geração de arquivos .etdx** a partir de PDFs
+- **Upscaling com IA** usando Real-ESRGAN (ONNX)
 - **Upscaling simples** usando redimensionamento LANCZOS
+- **Suporte a CUDA** para aceleração por GPU
 - **Suporte a múltiplas escalas**: x2, x4
 - **Processamento otimizado** para melhor performance
 - **Interface gráfica** intuitiva
 
 ## 📋 Requisitos
 
+### Básicos
 ```bash
 pip install -r requirements.txt
+```
+
+### Para Upscaling com IA (Opcional)
+```bash
+pip install -r requirements-ai.txt
 ```
 
 **Requisitos de sistema:**
 - Python 3.8+
 - Mínimo 2GB RAM
+- **Para IA**: 4GB+ RAM, GPU NVIDIA recomendado
 
 ## 🛠️ Instalação
 
@@ -44,17 +53,26 @@ python etdx_gui.py
 
 #### Gerar PDF a partir de .etdx:
 ```bash
-python etdx_cli.py --etdx arquivo.etdx --output saida.pdf --dpi 300 --upscale
+# Com upscaling (padrão: habilitado)
+python cli.py arquivo.etdx --output saida.pdf --dpi 300
+
+# Desabilitar upscaling
+python cli.py arquivo.etdx --output saida.pdf --dpi 300 --no-upscale
 ```
 
 #### Gerar .etdx a partir de PDF:
 ```bash
-python etdx_cli.py --pdf arquivo.pdf --output saida.etdx --dpi 300 --upscale
+# Com upscaling (padrão: habilitado)
+python etdx_cli.py arquivo.pdf --output saida.etdx --dpi 300
+
+# Desabilitar upscaling
+python etdx_cli.py arquivo.pdf --output saida.etdx --dpi 300 --no-upscale
 ```
 
 ### Parâmetros disponíveis:
 - `--dpi`: Resolução (padrão: 300)
-- `--upscale`: Ativar upscaling simples
+- `--upscale`: Ativar upscaling (padrão: habilitado)
+- `--no-upscale`: Desabilitar upscaling
 - `--format`: Formato de imagem (jpeg/png)
 - `--quality`: Qualidade JPEG (1-100)
 
@@ -63,7 +81,9 @@ python etdx_cli.py --pdf arquivo.pdf --output saida.etdx --dpi 300 --upscale
 ### Processamento de Imagens
 
 O sistema inclui processamento otimizado:
+- **Upscaling com IA** usando Real-ESRGAN (ONNX)
 - **Fallback para CPU** quando GPU está sem memória
+- **Fallback para Lanczos** quando IA falha
 - **Limpeza automática** de cache CUDA
 - **Configuração otimizada** de alocação de memória
 
@@ -74,6 +94,14 @@ O sistema inclui processamento otimizado:
 - **Cache em disco**: Para execução direta em Python
 - **Limpeza automática**: Ao finalizar processamento
 
+### Upscaling com IA
+
+- **Real-ESRGAN**: Modelos de alta qualidade
+- **ONNX Runtime**: Compatível com PyInstaller
+- **Suporte a CUDA**: Aceleração por GPU
+- **Múltiplos modelos**: x2, x4, anime
+- **Download automático**: Modelos baixados automaticamente
+
 ## 🐛 Solução de Problemas
 
 ### Erro de Memória CUDA
@@ -83,6 +111,14 @@ Se você encontrar erros de "CUDA out of memory":
 2. **Limpe outros programas** que usam GPU
 3. **Reduza o DPI** (use 150 ou 200 em vez de 300)
 4. **Desative upscaling** se necessário
+
+### Erro de Upscaling com IA
+Se o upscaling com IA falhar:
+
+1. **O sistema usará automaticamente upscale simples**
+2. **Verifique se as dependências estão instaladas**: `pip install -r requirements-ai.txt`
+3. **Execute o teste**: `python test_ai_upscale.py`
+4. **Verifique se há GPU NVIDIA** disponível
 
 ### Erro de Cache
 Se houver problemas com cache:
@@ -95,7 +131,11 @@ Se houver problemas com cache:
 Execute o script de teste para verificar se tudo está funcionando:
 
 ```bash
-python test_realesrgan.py
+# Teste básico
+python test_ai_upscale.py
+
+# Teste de integração
+python -c "from pdf_generator.core import AI_UPSCALE_AVAILABLE; print(f'IA disponível: {AI_UPSCALE_AVAILABLE}')"
 ```
 
 ## 📁 Estrutura do Projeto
@@ -105,18 +145,29 @@ GeneratePdfEtdx/
 ├── pdf_generator/
 │   ├── core.py              # Geração de PDFs
 │   ├── etdx_generator.py    # Geração de .etdx
-│   ├── realesrgan_upscaler.py # Upscaling com Real-ESRGAN
+│   ├── ai_upscaler.py       # Upscaling com IA (Real-ESRGAN)
+│   ├── models/              # Modelos ONNX
 │   └── etdx_sizes.py        # Tamanhos de papel
 ├── etdx_gui.py              # Interface gráfica
 ├── etdx_cli.py              # Interface linha de comando
 ├── requirements.txt          # Dependências básicas
 ├── requirements-ai.txt       # Dependências para IA
-└── test_upscale.py          # Script de teste
+├── test_ai_upscale.py       # Script de teste IA
+└── install_ai_deps.bat      # Instalador Windows
 ```
 
 ## 🔄 Changelog
 
-### v3.0.0 (Atual)
+### v4.0.0 (Atual)
+- ✅ **Upscaling com IA usando Real-ESRGAN + ONNX**
+- ✅ **Compatibilidade total com PyInstaller**
+- ✅ **Suporte a CUDA e CPU**
+- ✅ **Múltiplos modelos (x2, x4, anime)**
+- ✅ **Download automático de modelos**
+- ✅ **Fallback inteligente para Lanczos**
+- ✅ **Scripts de instalação automatizados**
+
+### v3.0.0
 - ✅ **Migração para Real-ESRGAN 0.3.0**
 - ✅ **Melhor qualidade de upscaling**
 - ✅ **Suporte a múltiplos modelos (x2, x4, x8)**
