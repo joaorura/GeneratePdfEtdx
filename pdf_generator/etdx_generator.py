@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Gerador de arquivos .etdx a partir de PDFs
@@ -28,230 +27,35 @@ from typing import Optional, Tuple, Any, Callable
 
 from .etdx_sizes import ETDX_SIZES, get_etdx_size_by_id, find_closest_etdx_size, calculate_image_scale_and_position_exact, get_etdx_label_by_paperSizeId
 
+# Importar módulo de upscaling com IA
+try:
+    from .ai_upscaler import upscale_image, is_ai_upscaling_available, get_available_devices
+    AI_UPSCALE_AVAILABLE = is_ai_upscaling_available()
+except ImportError:
+    AI_UPSCALE_AVAILABLE = False
+    def upscale_image(img, scale_factor=4, device="auto", target_size=None):
+        # Fallback para upscale simples
+        if target_size:
+            return img.resize(target_size, Image.Resampling.LANCZOS)
+        else:
+            new_width = img.width * scale_factor
+            new_height = img.height * scale_factor
+            return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
+    def get_available_devices():
+        return ["cpu"]
+
 # Suporte para PyInstaller
 if getattr(sys, 'frozen', False):
     multiprocessing.freeze_support()
 
-# Lock global para upscaling
+# Lock global para upscaling - evita múltiplas chamadas simultâneas de upscale_image
+# que podem causar problemas de memória e performance em multiprocessing
 upscale_lock = Lock()
 
 # Flag para controlar se o multiprocessing está funcionando
 MULTIPROCESSING_AVAILABLE = not getattr(sys, 'frozen', False)
 
-
-
-# Diretórios de cache em disco (apenas para execução direta em Python)
-if not getattr(sys, 'frozen', False):
-    CACHE_DIR = 'etdx_upscale_cache'
-    MODEL_CACHE_DIR = os.path.join(CACHE_DIR, 'model')
-    FINAL_CACHE_DIR = os.path.join(CACHE_DIR, 'final')
-    # Criação protegida dos diretórios de cache
-    for d in [CACHE_DIR, MODEL_CACHE_DIR, FINAL_CACHE_DIR]:
-        try:
-            os.makedirs(d, exist_ok=True)
-        except PermissionError:
-            print(f"[Aviso] Sem permissão para criar o diretório de cache: {d}")
-        except Exception as e:
-            print(f"[Aviso] Erro ao criar diretório de cache {d}: {e}")
-else:
-    CACHE_DIR = None
-    MODEL_CACHE_DIR = None
-    FINAL_CACHE_DIR = None
-
-# Funções utilitárias para cache (reutilizadas do core.py)
-def _save_image_to_cache(img, cache_path):
-    with open(cache_path, 'wb') as f:
-        with io.BytesIO() as buf:
-            img.save(buf, format='PNG')
-            pickle.dump(buf.getvalue(), f)
-
-def _load_image_from_cache(cache_path):
-    try:
-        with open(cache_path, 'rb') as f:
-            img_bytes = pickle.load(f)
-            img = Image.open(io.BytesIO(img_bytes))
-            if img is None:
-                raise ValueError('Imagem carregada do cache é None')
-            return img
-    except Exception as e:
-        print(f'[Cache] Erro ao carregar imagem do cache {cache_path}: {e}. Apagando arquivo corrompido.')
-        try:
-            os.remove(cache_path)
-        except Exception:
-            pass
-        return None
-
-def _remove_cache_dir(path):
-    shutil.rmtree(path, ignore_errors=True)
-    os.makedirs(path, exist_ok=True)
-
-def get_model_cache_path(model_cache_hash):
-    if MODEL_CACHE_DIR is None:
-        return None
-    return os.path.join(MODEL_CACHE_DIR, f'{model_cache_hash}.pkl')
-
-def get_final_cache_path(final_cache_hash):
-    if FINAL_CACHE_DIR is None:
-        return None
-    return os.path.join(FINAL_CACHE_DIR, f'{final_cache_hash}.pkl')
-
-def get_model_cache(model_cache_hash):
-    if getattr(sys, 'frozen', False):
-        return None
-    path = get_model_cache_path(model_cache_hash)
-    if path and os.path.exists(path):
-        img = _load_image_from_cache(path)
-        if img is None:
-            print(f'[Cache] Cache do modelo corrompido em {path}, removido.')
-        return img
-    return None
-
-def set_model_cache(model_cache_hash, img):
-    if getattr(sys, 'frozen', False):
-        return
-    if img is None or not hasattr(img, 'save'):
-        print(f"[Cache] Tentativa de salvar None ou objeto inválido no cache do modelo: {model_cache_hash}")
-        return
-    path = get_model_cache_path(model_cache_hash)
-    if path:
-        try:
-            _save_image_to_cache(img, path)
-        except Exception as e:
-            print(f'Erro ao salvar cache do modelo: {e}')
-
-def get_final_cache(final_cache_hash):
-    if getattr(sys, 'frozen', False):
-        return None
-    path = get_final_cache_path(final_cache_hash)
-    if path and os.path.exists(path):
-        img = _load_image_from_cache(path)
-        if img is None:
-            print(f'[Cache] Cache final corrompido em {path}, removido.')
-        return img
-    return None
-
-def set_final_cache(final_cache_hash, img):
-    if getattr(sys, 'frozen', False):
-        return
-    if img is None or not hasattr(img, 'save'):
-        print(f"[Cache] Tentativa de salvar None ou objeto inválido no cache final: {final_cache_hash}")
-        return
-    path = get_final_cache_path(final_cache_hash)
-    if path:
-        try:
-            _save_image_to_cache(img, path)
-        except Exception as e:
-            print(f'Erro ao salvar cache final: {e}')
-
-def clear_etdx_upscale_cache():
-    if getattr(sys, 'frozen', False):
-        print("Cache não disponível em executável compilado")
-        return
-    if MODEL_CACHE_DIR and FINAL_CACHE_DIR:
-        _remove_cache_dir(MODEL_CACHE_DIR)
-        _remove_cache_dir(FINAL_CACHE_DIR)
-        print('Cache de upscale ETDX limpo (em disco)')
-
-def safe_clear_etdx_upscale_cache():
-    if getattr(sys, 'frozen', False):
-        return
-    if multiprocessing.current_process().name == 'MainProcess':
-        clear_etdx_upscale_cache()
-
-def _cleanup_cache_on_exit():
-    safe_clear_etdx_upscale_cache()
-
-if not getattr(sys, 'frozen', False):
-    atexit.register(_cleanup_cache_on_exit)
-
-def get_image_hash(img_path, scale_factor, target_size=None):
-    """Gera um hash único para a imagem baseado no caminho e fator de escala"""
-    try:
-        # Para páginas processadas (que não são arquivos reais), usar um hash baseado no conteúdo
-        if isinstance(img_path, str) and img_path.startswith('page_'):
-            # Hash baseado no nome da página e parâmetros
-            content_hash = hashlib.md5(f"{img_path}_{scale_factor}".encode()).hexdigest()
-            return content_hash
-        
-        path_hash = hashlib.md5(str(img_path).encode()).hexdigest()
-        
-        # Verificar se o arquivo existe antes de tentar acessar seus metadados
-        if not os.path.exists(img_path):
-            # Se o arquivo não existe, usar apenas o caminho e escala
-            scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
-            final_hash = hashlib.md5(f"{path_hash}_{scale_hash}".encode()).hexdigest()
-            return final_hash
-        
-        stat = os.stat(img_path)
-        metadata = f"{stat.st_size}_{stat.st_mtime}"
-        metadata_hash = hashlib.md5(metadata.encode()).hexdigest()
-        scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
-        final_hash = hashlib.md5(f"{path_hash}_{metadata_hash}_{scale_hash}".encode()).hexdigest()
-        return final_hash
-    except Exception as e:
-        print(f"Erro ao gerar hash da imagem {img_path}: {e}")
-        return None
-
-def get_model_cache_hash(img_path, scale_factor):
-    """Hash para o cache do resultado do modelo (sem target_size)"""
-    try:
-        # Para páginas processadas, usar hash baseado no conteúdo
-        if isinstance(img_path, str) and img_path.startswith('page_'):
-            content_hash = hashlib.md5(f"{img_path}_{scale_factor}".encode()).hexdigest()
-            return content_hash
-        
-        path_hash = hashlib.md5(str(img_path).encode()).hexdigest()
-        
-        # Verificar se o arquivo existe
-        if not os.path.exists(img_path):
-            scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
-            final_hash = hashlib.md5(f"{path_hash}_{scale_hash}".encode()).hexdigest()
-            return final_hash
-        
-        stat = os.stat(img_path)
-        metadata = f"{stat.st_size}_{stat.st_mtime}"
-        metadata_hash = hashlib.md5(metadata.encode()).hexdigest()
-        scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
-        final_hash = hashlib.md5(f"{path_hash}_{metadata_hash}_{scale_hash}".encode()).hexdigest()
-        return final_hash
-    except Exception as e:
-        print(f"Erro ao gerar hash do modelo para {img_path}: {e}")
-        return None
-
-def get_final_cache_hash(img_path, scale_factor, target_size):
-    """Hash para o cache do resultado final (inclui target_size)"""
-    try:
-        # Para páginas processadas, usar hash baseado no conteúdo
-        if isinstance(img_path, str) and img_path.startswith('page_'):
-            size_hash = hashlib.md5(f"{target_size[0]}_{target_size[1]}".encode()).hexdigest()
-            content_hash = hashlib.md5(f"{img_path}_{scale_factor}_{size_hash}".encode()).hexdigest()
-            return content_hash
-        
-        path_hash = hashlib.md5(str(img_path).encode()).hexdigest()
-        
-        # Verificar se o arquivo existe
-        if not os.path.exists(img_path):
-            scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
-            size_hash = hashlib.md5(f"{target_size[0]}_{target_size[1]}".encode()).hexdigest()
-            final_hash = hashlib.md5(f"{path_hash}_{scale_hash}_{size_hash}".encode()).hexdigest()
-            return final_hash
-        
-        stat = os.stat(img_path)
-        metadata = f"{stat.st_size}_{stat.st_mtime}"
-        metadata_hash = hashlib.md5(metadata.encode()).hexdigest()
-        scale_hash = hashlib.md5(f"{scale_factor}".encode()).hexdigest()
-        size_hash = hashlib.md5(f"{target_size[0]}_{target_size[1]}".encode()).hexdigest()
-        final_hash = hashlib.md5(f"{path_hash}_{metadata_hash}_{scale_hash}_{size_hash}".encode()).hexdigest()
-        return final_hash
-    except Exception as e:
-        print(f"Erro ao gerar hash final para {img_path}: {e}")
-        return None
-
-# Cache para modelos de upscaling
-_upscale_model_cache = {}
-_upscale_cache_lock = Lock()
-
-# A disponibilidade do HF_UPSCALE_AVAILABLE é testada no módulo hf_upscaler
 
 class ETDXGenerator:
     """Gerador de arquivos .etdx a partir de PDFs"""
@@ -261,6 +65,7 @@ class ETDXGenerator:
         self.temp_dir = None
         self.project_id = str(uuid.uuid4())
         self.created_at = datetime.now().isoformat()
+        self.detected_paper_size = None  # Armazenar o tamanho detectado
         
         # Verificar se o arquivo PDF existe
         if not self.pdf_path.exists():
@@ -271,6 +76,8 @@ class ETDXGenerator:
         
     def get_paper_size_from_pdf(self, page_num=0) -> Tuple[str, Tuple[float, float]]:
         """Extrai o tamanho do papel do PDF e retorna o identificador do tamanho permitido mais próximo"""
+        if not self.pdf_document:
+            raise ValueError("Documento PDF não está aberto")
         if page_num >= len(self.pdf_document):
             page_num = 0
         page = self.pdf_document[page_num]
@@ -299,10 +106,120 @@ class ETDXGenerator:
         }
         return paper_sizes.get(paper_size_id, (595, 842))
     
+
+    def calculate_optimal_render_dpi(self, page_num: int = 0) -> float:
+        """Calcula o DPI ótimo para renderizar uma página específica baseado nas imagens contidas"""
+        if not self.pdf_document or page_num >= len(self.pdf_document):
+            return 300.0
+            
+        print(f"Calculando DPI ótimo para renderização da página {page_num + 1}...")
+        
+        page = self.pdf_document[page_num]
+        image_list = page.get_images(full=True)
+        
+        if not image_list:
+            print(f"Página {page_num + 1}: nenhuma imagem encontrada, usando DPI padrão: 300")
+            return 300.0
+        
+        # Lista para armazenar todos os DPIs das imagens da página
+        page_dpi_values = []
+        total_images = 0
+        
+        for img_index, img in enumerate(image_list):
+            try:
+                is_mask = img[7]
+                if is_mask:
+                    continue  # pula máscaras
+                    
+                # Obter informações da imagem
+                xref = img[0]  # Referência da imagem no PDF
+                pix = fitz.Pixmap(self.pdf_document, xref)
+                
+                # Calcular DPI real da imagem baseado no tamanho físico
+                img_rect = page.get_image_bbox(xref)
+                if img_rect:
+                    # img_rect é uma tupla (Rect, Matrix), pegar apenas o Rect
+                    rect = img_rect[0] if isinstance(img_rect, tuple) else img_rect
+                    # Converter pontos para polegadas (1 ponto = 1/72 polegada)
+                    img_width_inches = rect.width / 72.0
+                    img_height_inches = rect.height / 72.0
+                    
+                    # Calcular DPI real
+                    dpi_width = pix.width / img_width_inches if img_width_inches > 0 else 0
+                    dpi_height = pix.height / img_height_inches if img_height_inches > 0 else 0
+                    
+                    # Usar o menor DPI (mais conservador)
+                    img_dpi = min(dpi_width, dpi_height)
+                    
+                    if img_dpi > 0:
+                        page_dpi_values.append(img_dpi)
+                        total_images += 1
+                        print(f"  Imagem {img_index + 1}: {pix.width}x{pix.height} @ {img_dpi:.1f} DPI")
+                
+                pix = None  # Liberar memória
+                
+            except Exception as e:
+                print(f"Erro ao calcular DPI da imagem {img_index} na página {page_num + 1}: {e}")
+                continue
+        
+        # Calcular DPI médio da página
+        if page_dpi_values:
+            # Usar o DPI médio das imagens da página
+            optimal_dpi = sum(page_dpi_values) / len(page_dpi_values)
+            
+            # Limitar o DPI máximo para evitar problemas de memória
+            max_dpi = 600  # DPI máximo razoável
+            if optimal_dpi > max_dpi:
+                print(f"  DPI calculado ({optimal_dpi:.1f}) muito alto, limitando a {max_dpi}")
+                optimal_dpi = max_dpi
+            
+            print(f"Página {page_num + 1}: {total_images} imagens, DPI ótimo para renderização: {optimal_dpi:.1f}")
+            return optimal_dpi
+        else:
+            print(f"Página {page_num + 1}: nenhuma imagem válida encontrada, usando DPI padrão: 300")
+            return 300.0
+
+    def render_page_at_optimal_dpi(self, page_num: int = 0) -> Optional[Image.Image]:
+        """Renderiza uma página específica com o DPI ótimo baseado nas imagens contidas"""
+        if not self.pdf_document or page_num >= len(self.pdf_document):
+            return None
+            
+        try:
+            page = self.pdf_document[page_num]
+            
+            # Calcular DPI ótimo para esta página
+            optimal_dpi = self.calculate_optimal_render_dpi(page_num)
+            
+            # Calcular fator de escala baseado no DPI ótimo
+            # DPI padrão do PDF é 72, então o fator de escala é optimal_dpi / 72
+            scale_factor = optimal_dpi / 72.0
+            
+            print(f"Renderizando página {page_num + 1} com fator de escala: {scale_factor:.3f} (DPI: {optimal_dpi:.1f})")
+            
+            # Criar matriz de transformação com o fator de escala
+            mat = fitz.Matrix(scale_factor, scale_factor)
+            
+            # Renderizar página como imagem
+            pix = page.get_pixmap(matrix=mat)  # type: ignore
+            img_data = pix.tobytes("png")
+            
+            # Converter para PIL Image
+            img = Image.open(io.BytesIO(img_data)).convert('RGB')
+            
+            print(f"Página {page_num + 1} renderizada: {img.width}x{img.height} pixels")
+            
+            return img
+            
+        except Exception as e:
+            print(f"Erro ao renderizar página {page_num + 1} com DPI ótimo: {e}")
+            return None
+
+
+
     @staticmethod
-    def _process_page_worker(args: Tuple[int, str, int, str, bool]) -> Tuple[int, Optional[io.BytesIO], int, int]:
+    def _process_page_worker(args: Tuple[int, str, bool, Tuple[int, int]]) -> Tuple[int, Optional[io.BytesIO]]:
         """Worker para processamento de página com multiprocessing"""
-        (page_num, pdf_path, dpi, img_format, upscale) = args
+        (page_num, pdf_path, upscale, target_size_px) = args
         
         try:
             # Abrir o PDF com tratamento de erro mais robusto
@@ -310,60 +227,143 @@ class ETDXGenerator:
                 pdf_doc = fitz.Document(str(pdf_path))  # type: ignore
                 if page_num >= len(pdf_doc):
                     print(f"Página {page_num} não existe no PDF")
-                    return (page_num, None, 0, 0)
+                    return (page_num, None)
                 page = pdf_doc[page_num]
             except Exception as e:
                 print(f"Erro ao abrir PDF ou acessar página {page_num}: {e}")
-                return (page_num, None, 0, 0)
+                return (page_num, None)
             
             try:
-                # Renderizar página como imagem
-                mat = fitz.Matrix(dpi/72, dpi/72)
+                # Calcular DPI ótimo para esta página específica
+                print(f"Calculando DPI ótimo para página {page_num + 1}...")
+                
+                # Obter lista de imagens da página
+                image_list = page.get_images(full=True)
+                page_dpi_values = []
+                
+                if image_list:
+                    for img_index, img_info in enumerate(image_list):
+                        try:
+                            is_mask = img_info[7]
+                            if is_mask:
+                                continue  # pula máscaras
+                                
+                            # Obter informações da imagem
+                            xref = img_info[0]  # Referência da imagem no PDF
+                            pix = fitz.Pixmap(pdf_doc, xref)  # type: ignore
+                            
+                            # Calcular DPI real da imagem baseado no tamanho físico
+                            img_rect = page.get_image_bbox(xref)
+                            if img_rect:
+                                # img_rect é uma tupla (Rect, Matrix), pegar apenas o Rect
+                                rect = img_rect[0] if isinstance(img_rect, tuple) else img_rect
+                                # Converter pontos para polegadas (1 ponto = 1/72 polegada)
+                                img_width_inches = rect.width / 72.0
+                                img_height_inches = rect.height / 72.0
+                                
+                                # Calcular DPI real
+                                dpi_width = pix.width / img_width_inches if img_width_inches > 0 else 0
+                                dpi_height = pix.height / img_height_inches if img_height_inches > 0 else 0
+                                
+                                # Usar o menor DPI (mais conservador)
+                                img_dpi = min(dpi_width, dpi_height)
+                                
+                                if img_dpi > 0:
+                                    page_dpi_values.append(img_dpi)
+                                    print(f"  Imagem {img_index + 1}: {pix.width}x{pix.height} @ {img_dpi:.1f} DPI")
+                            
+                            pix = None  # Liberar memória
+                            
+                        except Exception as e:
+                            print(f"Erro ao calcular DPI da imagem {img_index} na página {page_num + 1}: {e}")
+                            continue
+                
+                # Calcular DPI ótimo para renderização
+                if page_dpi_values:
+                    optimal_dpi = sum(page_dpi_values) / len(page_dpi_values)
+                    # Limitar o DPI máximo para evitar problemas de memória
+                    max_dpi = 600
+                    if optimal_dpi > max_dpi:
+                        print(f"  DPI calculado ({optimal_dpi:.1f}) muito alto, limitando a {max_dpi}")
+                        optimal_dpi = max_dpi
+                    print(f"Página {page_num + 1}: {len(page_dpi_values)} imagens, DPI ótimo: {optimal_dpi:.1f}")
+                else:
+                    optimal_dpi = 300.0
+                    print(f"Página {page_num + 1}: nenhuma imagem encontrada, usando DPI padrão: {optimal_dpi}")
+                
+                # Calcular fator de escala baseado no DPI ótimo
+                # DPI padrão do PDF é 72, então o fator de escala é optimal_dpi / 72
+                scale_factor = optimal_dpi / 72.0
+                
+                print(f"Renderizando página {page_num + 1} com fator de escala: {scale_factor:.3f} (DPI: {optimal_dpi:.1f})")
+                
+                # Criar matriz de transformação com o fator de escala
+                mat = fitz.Matrix(scale_factor, scale_factor)
                 pix = page.get_pixmap(matrix=mat)  # type: ignore
                 img_data = pix.tobytes("png")
                 
                 # Converter para PIL Image
                 img = Image.open(io.BytesIO(img_data)).convert('RGB')
                 
-                # Aplicar upscale se necessário
-                if upscale and not getattr(sys, 'frozen', False):
-                    # Verificar se precisa de upscale
-                    target_dpi = dpi * 2  # Upscale para 2x DPI
-                    target_width = int(page.rect.width * target_dpi / 72)
-                    target_height = int(page.rect.height * target_dpi / 72)
-                    target_size = (target_width, target_height)
+                # Calcular o tamanho alvo respeitando a proporção da imagem
+                # Usar a função calculate_image_scale_and_position_exact para determinar a escala correta
+                scale_info = calculate_image_scale_and_position_exact(target_size_px, [img.width, img.height], "fit")
+                scale = scale_info["scale"]
                     
-                    if img.width < target_width or img.height < target_height:
-                        scale_factor = max(target_width / img.width, target_height / img.height)
-                        if scale_factor > 1.5:
-                            if scale_factor <= 2:
-                                scale_factor = 2
-                            elif scale_factor <= 4:
-                                scale_factor = 4
-                            else:
-                                scale_factor = 4  # Máximo 4x para evitar problemas
-                            
-                            print(f"Aplicando upscale x{scale_factor} na página {page_num + 1}")
-                            
-                            # Em workers, usar upscale simples
-                            img_path = f"page_{page_num + 1}"  # Identificador único para cache
-                            
-                            # Verificar cache final primeiro
-                            final_cache_hash = get_final_cache_hash(img_path, scale_factor, target_size)
-                            if final_cache_hash:
-                                cached_img = get_final_cache(final_cache_hash)
-                                if cached_img is not None:
-                                    print(f"[Cache] Cache final hit para página {page_num + 1}")
-                                    img = cached_img
-                                else:
-                                    # Aplicar upscale simples e salvar no cache
-                                    img = img.resize((int(img.width * scale_factor), int(img.height * scale_factor)), Image.Resampling.LANCZOS)
-                                    if target_size:
-                                        img = img.resize(target_size, Image.Resampling.LANCZOS)
-                                    set_final_cache(final_cache_hash, img)
-                            else:
-                                # Aplicar upscale simples
-                                img = img.resize((int(img.width * scale_factor), int(img.height * scale_factor)), Image.Resampling.LANCZOS)
+                # Calcular o tamanho da imagem escalada mantendo a proporção
+                scaled_width = int(img.width * scale)
+                scaled_height = int(img.height * scale)
+                    
+                print(f"Página {page_num + 1}: imagem={img.width}x{img.height}, escala={scale:.3f}, tamanho escalado={scaled_width}x{scaled_height}")
+                    
+                # Calcular fator de escala baseado no tamanho mínimo desejado
+                scale_factor = scale
+                    
+                # Limitar o fator de escala
+                if scale_factor <= 2:
+                    scale_factor = 2
+                elif scale_factor <= 4:
+                    scale_factor = 4
+                elif scale_factor <= 8:
+                    scale_factor = 8
+                else:
+                    scale_factor = 8  # Máximo 8x para evitar problemas
+                    
+                print(f"Página {page_num + 1}: precisa upscale, fator={scale_factor:.2f}")
+                    
+                # Em workers, usar upscale simples
+                img_path = f"page_{page_num + 1}"  # Identificador único para cache
+                    
+                # Calcular tamanho após upscale (mantendo proporção)
+                upscaled_width = int(img.width * scale_factor)
+                upscaled_height = int(img.height * scale_factor)
+                upscaled_size = (upscaled_width, upscaled_height)
+
+                # Aplicar upscale se necessário
+                if AI_UPSCALE_AVAILABLE and upscale:
+                    # Usar upscaling com IA se disponível e não for executável compilado
+                    if AI_UPSCALE_AVAILABLE and not getattr(sys, 'frozen', False):
+                        try:
+                            print(f"Aplicando upscale com IA x{scale_factor} na página {page_num + 1}")
+                                # Usar lock para evitar múltiplas chamadas simultâneas de upscale_image
+                            with upscale_lock:
+                                img = upscale_image(img, scale_factor=scale_factor)
+                        except Exception as e:
+                            print(f"Erro no upscale com IA: {e}, usando upscale simples")
+                            # Fallback para upscale simples
+                            img = img.resize(upscaled_size, Image.Resampling.LANCZOS)
+                    else:
+                        # Upscale simples (para executável compilado ou quando IA não está disponível)
+                        if getattr(sys, 'frozen', False):
+                            print(f"Aplicando upscale simples x{scale_factor} na página {page_num + 1} (executável compilado)")
+                        else:
+                            print(f"Aplicando upscale simples x{scale_factor} na página {page_num + 1}")
+                        img = img.resize(upscaled_size, Image.Resampling.LANCZOS)
+                else:
+                    print(f"Página {page_num + 1}: upscale desabilitado, seguindo com upscale simples")
+                
+                img = img.resize(upscaled_size, Image.Resampling.LANCZOS)
+
                 
                 # Salvar imagem
                 img_bytes = io.BytesIO()
@@ -371,14 +371,10 @@ class ETDXGenerator:
                 
                 img_bytes.seek(0)
                 
-                # Obter dimensões da página antes de fechar
-                page_width = page.rect.width
-                page_height = page.rect.height
-                
                 # Fechar o documento PDF
                 pdf_doc.close()
                 
-                return (page_num, img_bytes, page_width, page_height)
+                return (page_num, img_bytes)
                 
             except Exception as e:
                 print(f"Erro ao processar página {page_num}: {e}")
@@ -386,32 +382,43 @@ class ETDXGenerator:
                     pdf_doc.close()
                 except:
                     pass
-                return (page_num, None, 0, 0)
+                return (page_num, None)
                 
         except Exception as e:
             print(f"Erro geral ao processar página {page_num}: {e}")
-            return (page_num, None, 0, 0)
+            return (page_num, None)
     
-    def create_etdx(self, output_filename: str = "documento_gerado.etdx", dpi: int = 300, img_format: str = 'png', upscale: bool = True, progress_callback: Optional[Callable[[int, int], None]] = None, paper_size_id: Optional[str] = None, fit_mode: str = "fit") -> None:
+    def create_etdx(self, output_filename: str = "documento_gerado.etdx", dpi: int = 300, 
+        img_format: str = 'png', upscale: bool = True, 
+        progress_callback: Optional[Callable[[int, int], None]] = None, 
+        paper_size_id: Optional[str] = None, fit_mode: str = "fit") -> None:
         """Cria um arquivo .etdx a partir do PDF"""
+
         try:
             print(f"Iniciando geração de ETDX: {output_filename}")
             print(f"Configurações: DPI={dpi}, formato={img_format}, modo={fit_mode}")
+                
             
             # Obter informações do PDF
+            if not self.pdf_document:
+                raise ValueError("Documento PDF não está aberto")
             num_pages = len(self.pdf_document)
             
             # Seleção de tamanho ETDX
             if paper_size_id is None or paper_size_id == 'auto':
                 # Detectar tamanho mais próximo
-                _, (width_mm, height_mm) = self.get_paper_size_from_pdf()
+                detected_id, (width_mm, height_mm) = self.get_paper_size_from_pdf()
                 etdx_size = find_closest_etdx_size(width_mm, height_mm)
                 if etdx_size is None:
                     raise ValueError("Não foi possível determinar o tamanho ETDX mais próximo.")
+                # Armazenar o tamanho detectado para uso no resumo
+                self.detected_paper_size = (detected_id, width_mm, height_mm)
             else:
                 etdx_size = get_etdx_size_by_id(paper_size_id)
                 if etdx_size is None:
                     raise ValueError(f"Tamanho de papel não permitido: {paper_size_id}")
+                # Armazenar o tamanho especificado para uso no resumo
+                self.detected_paper_size = (paper_size_id, etdx_size["size"][0]/14.5, etdx_size["size"][1]/14.5)
             paperSizeId = etdx_size["paperSizeId"]
             size_px = etdx_size["size"]
             label = get_etdx_label_by_paperSizeId(paperSizeId)
@@ -446,10 +453,10 @@ class ETDXGenerator:
             # Processar páginas
             args_list = []
             for page_num in range(num_pages):
-                args_list.append((page_num, self.pdf_path, dpi, 'png', upscale))
+                args_list.append((page_num, self.pdf_path, upscale, size_px))
             
             # Processamento normal
-            if MULTIPROCESSING_AVAILABLE and len(args_list) > 1:
+            if MULTIPROCESSING_AVAILABLE and len(args_list) > 1 and not upscale:
                 try:
                     with Pool(processes=min(cpu_count(), len(args_list))) as pool:
                         results = pool.map(self._process_page_worker, args_list)
@@ -467,7 +474,7 @@ class ETDXGenerator:
                     results.append(result)
             
             # Organizar resultados por página
-            for page_num, img_bytes, page_width, page_height in results:
+            for page_num, img_bytes in results:
                 if img_bytes is None:
                     continue
                 
@@ -490,10 +497,9 @@ class ETDXGenerator:
                     f.write(img_bytes.getvalue())
                 
                 # Calcular escala e posição da imagem usando valores corretos
-                # Converter dimensões da página de pontos para pixels (assumindo 72 DPI)
-                page_width_px = int(page_width * dpi / 72)
-                page_height_px = int(page_height * dpi / 72)
-                image_size = [page_width_px, page_height_px]
+                # Usar as dimensões reais da imagem processada
+                img = Image.open(img_bytes)
+                image_size = [img.width, img.height]
                 scale_info = calculate_image_scale_and_position_exact(size_px, image_size, fit_mode)
                 
                 # Criar dados da página seguindo o formato correto
@@ -1751,20 +1757,48 @@ class ETDXGenerator:
             # Limpar diretório temporário
             if self.temp_dir and os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
-            safe_clear_etdx_upscale_cache()
     
     def print_summary(self):
         """Imprime resumo do processamento"""
         print("\n=== RESUMO DO PROCESSAMENTO ===")
         print(f"Arquivo PDF: {self.pdf_path}")
-        print(f"Páginas: {len(self.pdf_document)}")
-        paper_size_id, (width_mm, height_mm) = self.get_paper_size_from_pdf()
-        print(f"Tamanho do papel: {paper_size_id} ({width_mm:.1f}x{height_mm:.1f}mm)")
+        if not self.pdf_document:
+            print("Páginas: Documento não disponível")
+        else:
+            print(f"Páginas: {len(self.pdf_document)}")
+        
+        # Usar o tamanho detectado durante a criação do ETDX
+        if self.detected_paper_size:
+            paper_size_id, width_mm, height_mm = self.detected_paper_size
+            print(f"Tamanho do papel: {paper_size_id} ({width_mm:.1f}x{height_mm:.1f}mm)")
+        else:
+            # Fallback para detecção se não foi armazenado
+            paper_size_id, (width_mm, height_mm) = self.get_paper_size_from_pdf()
+            print(f"Tamanho do papel: {paper_size_id} ({width_mm:.1f}x{height_mm:.1f}mm)")
+        
         print(f"ID do projeto: {self.project_id}")
     
+    def close(self):
+        """Fecha o documento PDF de forma segura"""
+        try:
+            if hasattr(self, 'pdf_document') and self.pdf_document:
+                try:
+                    self.pdf_document.close()
+                    self.pdf_document = None
+                except (ValueError, AttributeError):
+                    # Documento já foi fechado
+                    pass
+        except Exception as e:
+            print(f"Erro ao fechar documento PDF: {e}")
+
     def __del__(self):
         """Destrutor para limpeza"""
-        if hasattr(self, 'pdf_document'):
-            self.pdf_document.close()
-        if hasattr(self, 'temp_dir') and self.temp_dir and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir) 
+        try:
+            if hasattr(self, 'pdf_document') and self.pdf_document:
+                try:
+                    self.pdf_document.close()
+                except (ValueError, AttributeError):
+                    # Documento já foi fechado ou não existe
+                    pass
+        except Exception:
+            pass 

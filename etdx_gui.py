@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-from pdf_generator.etdx_generator import ETDXGenerator, clear_etdx_upscale_cache
+from pdf_generator.etdx_generator import ETDXGenerator
 import shutil
 import os
 import sys
@@ -128,7 +128,6 @@ class ETDXApp:
         ttk.Label(frm, textvariable=self.status, foreground='blue').pack(fill='x', pady=5)
 
     def select_file(self):
-        clear_etdx_upscale_cache()  # Limpa ambos os caches ao selecionar novo arquivo
         path = filedialog.askopenfilename(filetypes=[('Arquivos PDF', '*.pdf')])
         if path:
             self.pdf_path.set(path)

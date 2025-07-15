@@ -65,11 +65,11 @@ echo.
 echo Arquivos encontrados no zip:
 dir temp_models\*.onnx /b
 
-REM Copiar apenas os modelos específicos (2x, 4x, 8x) para a pasta de modelos
+REM Copiar apenas os modelos fp16 específicos para a pasta de modelos
 echo.
-echo Copiando modelos ONNX especificos...
+echo Copiando modelos ONNX fp16 especificos...
 for %%F in (2 4 8) do (
-    set MODEL_FILE=RealESRGAN_x%%F.onnx
+    set MODEL_FILE=RealESRGAN_x%%F_fp16.onnx
     echo Verificando: !MODEL_FILE!
     if exist "temp_models\!MODEL_FILE!" (
         echo Copiando: !MODEL_FILE!

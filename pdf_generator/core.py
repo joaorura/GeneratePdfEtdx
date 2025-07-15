@@ -376,7 +376,9 @@ class PDFGenerator:
                     if AI_UPSCALE_AVAILABLE and not getattr(sys, 'frozen', False):
                         try:
                             print(f"Aplicando upscale com IA x{scale_factor} em {img_path.name}")
-                            img = upscale_image(img, scale_factor=scale_factor, target_size=(target_px_width, target_px_height))
+                            # Usar lock para evitar múltiplas chamadas simultâneas de upscale_image
+                            with upscale_lock:
+                                img = upscale_image(img, scale_factor=scale_factor, target_size=(target_px_width, target_px_height))
                         except Exception as e:
                             print(f"Erro no upscale com IA: {e}, usando upscale simples")
                             # Fallback para upscale simples
